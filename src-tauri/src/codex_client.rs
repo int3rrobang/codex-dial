@@ -118,6 +118,9 @@ fn find_codex_executable() -> Option<String> {
 }
 
 pub async fn fetch() -> Result<UsageSnapshot, CodexError> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     let executable = find_codex_executable().ok_or(CodexError::CliNotFound)?;
 
     let mut child = Command::new(&executable)
@@ -125,6 +128,7 @@ pub async fn fetch() -> Result<UsageSnapshot, CodexError> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|_| CodexError::CliNotFound)?;
 
