@@ -52,4 +52,21 @@ export interface UiState {
   sync_error_message: string | null;
   safety_buffer: number;
   launch_at_login: boolean;
+  opencode_go: OpenCodeGoSnapshot | null;
+  opencode_go_error: string | null;
+  opencode_go_forecasts: Forecast[];
+  opencode_go_samples: UsageSample[];
+  opencode_go_enabled: boolean;
+}
+
+export interface OpenCodeGoWindow {
+  name: string;
+  remaining_percent: number;
+  resets_at: number;
+  duration_minutes: number;
+}
+
+export interface OpenCodeGoSnapshot {
+  windows: OpenCodeGoWindow[];
+  fetched_at: number;
 }

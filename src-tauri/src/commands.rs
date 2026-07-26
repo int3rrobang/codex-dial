@@ -59,3 +59,33 @@ pub async fn stop_sync(monitor: State<'_, MonitorState>) -> Result<UiState, Stri
     m.stop_sync();
     Ok(m.ui_state())
 }
+
+#[tauri::command]
+pub async fn set_opencode_cookie(
+    monitor: State<'_, MonitorState>,
+    cookie: Option<String>,
+) -> Result<UiState, String> {
+    let mut m = monitor.lock().await;
+    m.set_opencode_cookie(cookie);
+    Ok(m.ui_state())
+}
+
+#[tauri::command]
+pub async fn set_opencode_workspace_id(
+    monitor: State<'_, MonitorState>,
+    id: Option<String>,
+) -> Result<UiState, String> {
+    let mut m = monitor.lock().await;
+    m.set_opencode_workspace_id(id);
+    Ok(m.ui_state())
+}
+
+#[tauri::command]
+pub async fn set_opencode_go_enabled(
+    monitor: State<'_, MonitorState>,
+    enabled: bool,
+) -> Result<UiState, String> {
+    let mut m = monitor.lock().await;
+    m.set_opencode_go_enabled(enabled);
+    Ok(m.ui_state())
+}

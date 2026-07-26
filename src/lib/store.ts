@@ -12,6 +12,11 @@ export const uiState = writable<UiState>({
   sync_error_message: null,
   safety_buffer: 3,
   launch_at_login: true,
+  opencode_go: null,
+  opencode_go_error: null,
+  opencode_go_forecasts: [],
+  opencode_go_samples: [],
+  opencode_go_enabled: false,
 });
 
 export const view = writable<"dashboard" | "settings">("dashboard");
@@ -45,4 +50,20 @@ export async function chooseSyncFolder() {
 export async function stopSync() {
   const state = await invoke<UiState>("stop_sync");
   uiState.set(state);
+}
+
+export async function setOpenCodeCookie(cookie: string | null) {
+  await invoke<UiState>("set_opencode_cookie", { cookie });
+  await refresh();
+}
+
+export async function setOpenCodeWorkspaceId(id: string | null) {
+  await invoke<UiState>("set_opencode_workspace_id", { id });
+  await refresh();
+}
+
+export async function setOpenCodeGoEnabled(enabled: boolean) {
+  await invoke<UiState>("set_opencode_go_enabled", { enabled });
+  if (enabled) await refresh();
+  else await fetchState();
 }

@@ -20,6 +20,9 @@ fn main() {
             commands::set_launch_at_login,
             commands::choose_sync_folder,
             commands::stop_sync,
+            commands::set_opencode_cookie,
+            commands::set_opencode_workspace_id,
+            commands::set_opencode_go_enabled,
         ])
         .setup(|app| {
             let refresh_item = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;

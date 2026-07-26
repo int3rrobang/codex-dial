@@ -42,6 +42,20 @@ pub struct UsageSnapshot {
     pub fetched_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OpenCodeGoWindow {
+    pub name: String,
+    pub remaining_percent: f64,
+    pub resets_at: i64,
+    pub duration_minutes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OpenCodeGoSnapshot {
+    pub windows: Vec<OpenCodeGoWindow>,
+    pub fetched_at: i64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum PaceStatus {
@@ -73,4 +87,9 @@ pub struct UiState {
     pub sync_error_message: Option<String>,
     pub safety_buffer: f64,
     pub launch_at_login: bool,
+    pub opencode_go: Option<OpenCodeGoSnapshot>,
+    pub opencode_go_error: Option<String>,
+    pub opencode_go_forecasts: Vec<Forecast>,
+    pub opencode_go_samples: Vec<UsageSample>,
+    pub opencode_go_enabled: bool,
 }

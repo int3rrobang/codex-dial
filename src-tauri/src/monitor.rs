@@ -1,6 +1,7 @@
 use crate::codex_client;
 use crate::forecast_engine;
 use crate::models::*;
+use crate::opencode_client;
 use crate::usage_history::UsageHistory;
 use std::path::PathBuf;
 
@@ -14,6 +15,14 @@ pub struct Monitor {
     pub sync_error_message: Option<String>,
     pub safety_buffer: f64,
     pub launch_at_login: bool,
+    pub opencode_go: Option<OpenCodeGoSnapshot>,
+    pub opencode_go_error: Option<String>,
+    pub opencode_go_forecasts: Vec<Forecast>,
+    pub opencode_go_samples: Vec<UsageSample>,
+    pub opencode_go_enabled: bool,
+    opencode_cookie: Option<String>,
+    opencode_workspace_id: Option<String>,
+    opencode_go_previous_statuses: Vec<PaceStatus>,
     previous_status: Option<PaceStatus>,
     history: UsageHistory,
     config_path: PathBuf,
@@ -25,6 +34,9 @@ struct PersistedConfig {
     launch_at_login: Option<bool>,
     sync_folder: Option<String>,
     previous_status: Option<PaceStatus>,
+    opencode_cookie: Option<String>,
+    opencode_workspace_id: Option<String>,
+    opencode_go_enabled: Option<bool>,
 }
 
 impl Monitor {
@@ -53,6 +65,14 @@ impl Monitor {
             sync_error_message: state.error_message,
             safety_buffer: config.safety_buffer.unwrap_or(3.0),
             launch_at_login: config.launch_at_login.unwrap_or(true),
+            opencode_go: None,
+            opencode_go_error: None,
+            opencode_go_forecasts: Vec::new(),
+            opencode_go_samples: Vec::new(),
+            opencode_go_enabled: config.opencode_go_enabled.unwrap_or(false),
+            opencode_cookie: config.opencode_cookie.clone(),
+            opencode_workspace_id: config.opencode_workspace_id.clone(),
+            opencode_go_previous_statuses: Vec::new(),
             previous_status: config.previous_status,
             history,
             config_path,
@@ -82,7 +102,22 @@ impl Monitor {
         self.sync_folder_name = sync_state.folder_name;
         self.sync_error_message = sync_state.error_message;
 
-        match codex_client::fetch().await {
+        let cookie = self.opencode_cookie.clone();
+        let workspace = self.opencode_workspace_id.clone();
+        let ocg_enabled = self.opencode_go_enabled;
+
+        let (codex_result, opencode_result) = tokio::join!(
+            codex_client::fetch(),
+            async {
+                if ocg_enabled {
+                    Some(opencode_client::fetch(&cookie, &workspace).await)
+                } else {
+                    None
+                }
+            }
+        );
+
+        match codex_result {
             Ok(snapshot) => {
                 let window = &snapshot.main_limit.window;
                 let sample = UsageSample {
@@ -104,6 +139,58 @@ impl Monitor {
             }
             Err(e) => {
                 self.error_message = Some(e.to_string());
+            }
+        }
+
+        if let Some(result) = opencode_result {
+            match result {
+                Ok(snapshot) => {
+                    for w in &snapshot.windows {
+                        let sample = UsageSample {
+                            observed_at: snapshot.fetched_at,
+                            remaining_percent: w.remaining_percent.round() as u32,
+                            resets_at: w.resets_at,
+                        };
+                        self.opencode_go_samples.retain(|s| s.resets_at != w.resets_at);
+                        self.opencode_go_samples.push(sample);
+                    }
+
+                    let mut forecasts = Vec::new();
+                    self.opencode_go_previous_statuses.resize(snapshot.windows.len(), PaceStatus::OnTrack);
+                    for (i, w) in snapshot.windows.iter().enumerate() {
+                        let window = UsageWindow {
+                            remaining_percent: w.remaining_percent,
+                            resets_at: w.resets_at,
+                            duration_minutes: w.duration_minutes,
+                        };
+                        let window_samples: Vec<UsageSample> = self.opencode_go_samples
+                            .iter()
+                            .filter(|s| s.resets_at == w.resets_at)
+                            .cloned()
+                            .collect();
+                        let forecast = forecast_engine::evaluate(
+                            &window,
+                            &window_samples,
+                            &[],
+                            self.safety_buffer,
+                            snapshot.fetched_at,
+                            Some(self.opencode_go_previous_statuses[i]),
+                        );
+                        self.opencode_go_previous_statuses[i] = forecast.status;
+                        forecasts.push(forecast);
+                    }
+                    self.opencode_go_forecasts = forecasts;
+
+                    self.opencode_go = Some(snapshot);
+                    self.opencode_go_error = None;
+                }
+                Err(opencode_client::OpenCodeError::NotConfigured) => {
+                    self.opencode_go = None;
+                    self.opencode_go_error = None;
+                }
+                Err(e) => {
+                    self.opencode_go_error = Some(e.to_string());
+                }
             }
         }
 
@@ -161,6 +248,27 @@ impl Monitor {
         self.update_config(|c| c.sync_folder = None);
     }
 
+    pub fn set_opencode_cookie(&mut self, cookie: Option<String>) {
+        self.opencode_cookie = cookie.clone();
+        self.update_config(|c| c.opencode_cookie = cookie);
+    }
+
+    pub fn set_opencode_workspace_id(&mut self, id: Option<String>) {
+        self.opencode_workspace_id = id.clone();
+        self.update_config(|c| c.opencode_workspace_id = id);
+    }
+
+    pub fn set_opencode_go_enabled(&mut self, enabled: bool) {
+        self.opencode_go_enabled = enabled;
+        if !enabled {
+            self.opencode_go = None;
+            self.opencode_go_error = None;
+            self.opencode_go_forecasts.clear();
+            self.opencode_go_samples.clear();
+        }
+        self.update_config(|c| c.opencode_go_enabled = Some(enabled));
+    }
+
     pub fn ui_state(&self) -> UiState {
         UiState {
             snapshot: self.snapshot.clone(),
@@ -172,6 +280,11 @@ impl Monitor {
             sync_error_message: self.sync_error_message.clone(),
             safety_buffer: self.safety_buffer,
             launch_at_login: self.launch_at_login,
+            opencode_go: self.opencode_go.clone(),
+            opencode_go_error: self.opencode_go_error.clone(),
+            opencode_go_forecasts: self.opencode_go_forecasts.clone(),
+            opencode_go_samples: self.opencode_go_samples.clone(),
+            opencode_go_enabled: self.opencode_go_enabled,
         }
     }
 

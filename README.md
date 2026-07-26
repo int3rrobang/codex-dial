@@ -16,6 +16,19 @@ Ported from [thrr87/codex-limits](https://github.com/thrr87/codex-limits) (macOS
 - Optional folder sync (OneDrive, Dropbox, etc.) to share history across machines
 - Refreshes every 10 minutes, on wake from sleep, or manually
 
+## OpenCode Go support
+
+Codex Dial also includes an optional OpenCode Go backend. When enabled, the Rust backend fetches OpenCode Go usage from `opencode.ai`, resolves the workspace, and produces forecasts for each usage window alongside the normal Codex view.
+
+OpenCode Go is disabled by default. To enable it:
+
+1. Open **Settings** and enable **OpenCode Go**.
+2. Copy your `auth` or `__Host-auth` session cookie from your browser's developer tools (**Application → Cookies**).
+3. Paste the cookie into Codex Dial and select **Save**.
+4. Refresh the dashboard. If automatic workspace discovery does not work, paste the `wrk_...` workspace ID as an override in Settings.
+
+The session cookie is saved in the app's local configuration and acts like a password. Treat it as sensitive, do not share it, and remove or replace it if it is exposed. OpenCode Go depends on authenticated web responses from `opencode.ai`, so expired cookies or upstream website changes can cause the optional tab to show an error without affecting Codex monitoring.
+
 ## Stats at a glance
 
 | Left | Right |
@@ -28,6 +41,7 @@ Ported from [thrr87/codex-limits](https://github.com/thrr87/codex-limits) (macOS
 
 - Windows 10/11
 - [Codex CLI](https://github.com/openai/codex) installed and signed in (`codex` or `codex.cmd` on PATH)
+- Optional: an OpenCode Go account and an active browser session cookie if you want to use the OpenCode Go tab
 
 ## Install
 
@@ -40,6 +54,8 @@ Grab the latest `.exe` installer from [Releases](../../releases).
 - [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) 18+
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (WebView2, Visual Studio C++ Build Tools)
+- A signed-in Codex CLI installation for live Codex data
+- Optional: an OpenCode Go browser session cookie for live OpenCode Go data
 
 ### Steps
 
@@ -47,9 +63,25 @@ Grab the latest `.exe` installer from [Releases](../../releases).
 git clone https://github.com/int3rrobang/codex-dial.git
 cd codex-dial
 npm install
-npm run tauri dev      # dev mode with hot reload
-npm run tauri build    # production installer in src-tauri/target/release/bundle/
+
+# Build the frontend only
+npm run build
+
+# Run the complete desktop app in development mode with hot reload
+npm run tauri dev
+
+# Build production Windows installers
+npm run tauri build
 ```
+
+Production installers are written under:
+
+```text
+src-tauri/target/release/bundle/nsis/
+src-tauri/target/release/bundle/msi/
+```
+
+The Codex and OpenCode Go integrations are part of the Rust backend and are included automatically in both development and production Tauri builds. No separate backend service is required.
 
 ## Tech stack
 
