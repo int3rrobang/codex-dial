@@ -39,9 +39,6 @@
     "active": true,
     "targets": ["nsis", "msi"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
-    "resources": {
-      "target/release/WebView2Loader.dll": ""
-    },
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

@@ -32,13 +32,20 @@ pub struct LimitReading {
     pub name: String,
     pub window: UsageWindow,
 }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BankedResetCredit {
+    pub title: String,
+    pub description: Option<String>,
+    pub expires_at: i64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UsageSnapshot {
     pub main_limit: LimitReading,
     pub other_limits: Vec<LimitReading>,
     pub token_history: Vec<TokenDay>,
-    pub emergency_reset_count: i32,
+    pub banked_reset_count: i32,
+    pub banked_reset_credits: Vec<BankedResetCredit>,
     pub fetched_at: i64,
 }
 
@@ -66,6 +73,7 @@ pub enum PaceStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Forecast {
+    pub window_started_at: i64,
     pub status: PaceStatus,
     pub expected_remaining_at_reset: f64,
     pub safety_remaining_at_reset: f64,
@@ -87,6 +95,7 @@ pub struct UiState {
     pub sync_error_message: Option<String>,
     pub safety_buffer: f64,
     pub launch_at_login: bool,
+    pub codex_enabled: bool,
     pub opencode_go: Option<OpenCodeGoSnapshot>,
     pub opencode_go_error: Option<String>,
     pub opencode_go_forecasts: Vec<Forecast>,

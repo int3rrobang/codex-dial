@@ -15,6 +15,7 @@ pub struct Monitor {
     pub sync_error_message: Option<String>,
     pub safety_buffer: f64,
     pub launch_at_login: bool,
+    pub codex_enabled: bool,
     pub opencode_go: Option<OpenCodeGoSnapshot>,
     pub opencode_go_error: Option<String>,
     pub opencode_go_forecasts: Vec<Forecast>,
@@ -33,6 +34,7 @@ struct PersistedConfig {
     safety_buffer: Option<f64>,
     launch_at_login: Option<bool>,
     sync_folder: Option<String>,
+    codex_enabled: Option<bool>,
     previous_status: Option<PaceStatus>,
     opencode_cookie: Option<String>,
     opencode_workspace_id: Option<String>,
@@ -48,9 +50,15 @@ impl Monitor {
         let config_path = app_dir.join("config.json");
 
         let _ = std::fs::create_dir_all(&app_dir);
-
         let installation_id = get_or_create_installation_id(&app_dir);
+
+        let config_exists = config_path.exists();
         let config = load_config(&config_path);
+        // A brand-new install starts unconfigured. Existing installs that
+        // predate the explicit provider setting retain the historical Codex
+        let codex_enabled = default_codex_enabled(config_exists, config.codex_enabled);
+        // The first launch may have neither provider configured.
+        let opencode_go_enabled = config.opencode_go_enabled.unwrap_or(false);
 
         let mut history = UsageHistory::new(history_dir, installation_id);
         let state = history.load();
@@ -65,11 +73,12 @@ impl Monitor {
             sync_error_message: state.error_message,
             safety_buffer: config.safety_buffer.unwrap_or(3.0),
             launch_at_login: config.launch_at_login.unwrap_or(true),
+            codex_enabled,
             opencode_go: None,
             opencode_go_error: None,
             opencode_go_forecasts: Vec::new(),
             opencode_go_samples: Vec::new(),
-            opencode_go_enabled: config.opencode_go_enabled.unwrap_or(false),
+            opencode_go_enabled,
             opencode_cookie: config.opencode_cookie.clone(),
             opencode_workspace_id: config.opencode_workspace_id.clone(),
             opencode_go_previous_statuses: Vec::new(),
@@ -102,12 +111,32 @@ impl Monitor {
         self.sync_folder_name = sync_state.folder_name;
         self.sync_error_message = sync_state.error_message;
 
+        let codex_enabled = self.codex_enabled;
         let cookie = self.opencode_cookie.clone();
         let workspace = self.opencode_workspace_id.clone();
         let ocg_enabled = self.opencode_go_enabled;
 
+        if !codex_enabled {
+            self.snapshot = None;
+            self.forecast = None;
+            self.error_message = None;
+        }
+        if !ocg_enabled {
+            self.opencode_go = None;
+            self.opencode_go_error = None;
+            self.opencode_go_forecasts.clear();
+            self.opencode_go_samples.clear();
+            self.opencode_go_previous_statuses.clear();
+        }
+
         let (codex_result, opencode_result) = tokio::join!(
-            codex_client::fetch(),
+            async {
+                if codex_enabled {
+                    Some(codex_client::fetch().await)
+                } else {
+                    None
+                }
+            },
             async {
                 if ocg_enabled {
                     Some(opencode_client::fetch(&cookie, &workspace).await)
@@ -117,28 +146,53 @@ impl Monitor {
             }
         );
 
-        match codex_result {
-            Ok(snapshot) => {
-                let window = &snapshot.main_limit.window;
-                let sample = UsageSample {
-                    observed_at: snapshot.fetched_at,
-                    remaining_percent: window.remaining_percent.round() as u32,
-                    resets_at: window.resets_at,
-                };
+        if let Some(result) = codex_result {
+            match result {
+                Ok(snapshot) => {
+                    let window = &snapshot.main_limit.window;
+                    let previous_reset = self
+                        .snapshot
+                        .as_ref()
+                        .map(|s| s.main_limit.window.resets_at)
+                        .or_else(|| {
+                            self.samples
+                                .iter()
+                                .max_by_key(|s| s.observed_at)
+                                .map(|s| s.resets_at)
+                        });
+                    let reset_detected = previous_reset != Some(window.resets_at)
+                        || self.snapshot.as_ref().is_some_and(|previous| {
+                            previous.main_limit.window.resets_at == window.resets_at
+                                && window.remaining_percent
+                                    >= previous.main_limit.window.remaining_percent + 10.0
+                        });
+                    if reset_detected {
+                        // Hysteresis belongs to one reset window. Carrying a
+                        // prior window's status into an early reset can keep
+                        // the plain-language prediction stale.
+                        self.previous_status = None;
+                    }
 
-                let state = self.history.record(sample);
-                self.samples = state.samples;
-                self.sync_folder_name = state.folder_name;
-                if state.error_message.is_none() {
-                    self.sync_error_message = None;
+                    let sample = UsageSample {
+                        observed_at: snapshot.fetched_at,
+                        remaining_percent: window.remaining_percent.round() as u32,
+                        resets_at: window.resets_at,
+                    };
+
+                    let state = self.history.record(sample);
+                    self.samples = state.samples;
+                    self.sync_folder_name = state.folder_name;
+                    if state.error_message.is_none() {
+                        self.sync_error_message = None;
+                    }
+
+                    self.snapshot = Some(snapshot);
+                    self.error_message = None;
+                    self.recalculate();
                 }
-
-                self.snapshot = Some(snapshot);
-                self.error_message = None;
-                self.recalculate();
-            }
-            Err(e) => {
-                self.error_message = Some(e.to_string());
+                Err(e) => {
+                    self.error_message = Some(e.to_string());
+                }
             }
         }
 
@@ -151,42 +205,21 @@ impl Monitor {
                             remaining_percent: w.remaining_percent.round() as u32,
                             resets_at: w.resets_at,
                         };
-                        self.opencode_go_samples.retain(|s| s.resets_at != w.resets_at);
+                        self.opencode_go_samples
+                            .retain(|s| s.resets_at != w.resets_at);
                         self.opencode_go_samples.push(sample);
                     }
 
-                    let mut forecasts = Vec::new();
-                    self.opencode_go_previous_statuses.resize(snapshot.windows.len(), PaceStatus::OnTrack);
-                    for (i, w) in snapshot.windows.iter().enumerate() {
-                        let window = UsageWindow {
-                            remaining_percent: w.remaining_percent,
-                            resets_at: w.resets_at,
-                            duration_minutes: w.duration_minutes,
-                        };
-                        let window_samples: Vec<UsageSample> = self.opencode_go_samples
-                            .iter()
-                            .filter(|s| s.resets_at == w.resets_at)
-                            .cloned()
-                            .collect();
-                        let forecast = forecast_engine::evaluate(
-                            &window,
-                            &window_samples,
-                            &[],
-                            self.safety_buffer,
-                            snapshot.fetched_at,
-                            Some(self.opencode_go_previous_statuses[i]),
-                        );
-                        self.opencode_go_previous_statuses[i] = forecast.status;
-                        forecasts.push(forecast);
-                    }
-                    self.opencode_go_forecasts = forecasts;
-
                     self.opencode_go = Some(snapshot);
+                    self.recalculate_opencode_go();
                     self.opencode_go_error = None;
                 }
                 Err(opencode_client::OpenCodeError::NotConfigured) => {
                     self.opencode_go = None;
                     self.opencode_go_error = None;
+                    self.opencode_go_forecasts.clear();
+                    self.opencode_go_samples.clear();
+                    self.opencode_go_previous_statuses.clear();
                 }
                 Err(e) => {
                     self.opencode_go_error = Some(e.to_string());
@@ -217,9 +250,48 @@ impl Monitor {
         self.persist_config();
     }
 
+    fn recalculate_opencode_go(&mut self) {
+        let snapshot = match &self.opencode_go {
+            Some(snapshot) => snapshot.clone(),
+            None => {
+                self.opencode_go_forecasts.clear();
+                return;
+            }
+        };
+
+        let mut forecasts = Vec::new();
+        self.opencode_go_previous_statuses
+            .resize(snapshot.windows.len(), PaceStatus::OnTrack);
+        for (i, w) in snapshot.windows.iter().enumerate() {
+            let window = UsageWindow {
+                remaining_percent: w.remaining_percent,
+                resets_at: w.resets_at,
+                duration_minutes: w.duration_minutes,
+            };
+            let window_samples: Vec<UsageSample> = self
+                .opencode_go_samples
+                .iter()
+                .filter(|s| s.resets_at == w.resets_at)
+                .cloned()
+                .collect();
+            let forecast = forecast_engine::evaluate(
+                &window,
+                &window_samples,
+                &[],
+                self.safety_buffer,
+                snapshot.fetched_at,
+                Some(self.opencode_go_previous_statuses[i]),
+            );
+            self.opencode_go_previous_statuses[i] = forecast.status;
+            forecasts.push(forecast);
+        }
+        self.opencode_go_forecasts = forecasts;
+    }
+
     pub fn set_safety_buffer(&mut self, value: f64) {
         self.safety_buffer = value;
         self.recalculate();
+        self.recalculate_opencode_go();
     }
 
     pub fn set_launch_at_login(&mut self, enabled: bool) {
@@ -248,6 +320,16 @@ impl Monitor {
         self.update_config(|c| c.sync_folder = None);
     }
 
+    pub fn set_codex_enabled(&mut self, enabled: bool) -> Result<(), String> {
+        self.codex_enabled = enabled;
+        if !enabled {
+            self.snapshot = None;
+            self.forecast = None;
+            self.error_message = None;
+        }
+        self.update_config(|c| c.codex_enabled = Some(enabled));
+        Ok(())
+    }
     pub fn set_opencode_cookie(&mut self, cookie: Option<String>) {
         self.opencode_cookie = cookie.clone();
         self.update_config(|c| c.opencode_cookie = cookie);
@@ -258,15 +340,17 @@ impl Monitor {
         self.update_config(|c| c.opencode_workspace_id = id);
     }
 
-    pub fn set_opencode_go_enabled(&mut self, enabled: bool) {
+    pub fn set_opencode_go_enabled(&mut self, enabled: bool) -> Result<(), String> {
         self.opencode_go_enabled = enabled;
         if !enabled {
             self.opencode_go = None;
             self.opencode_go_error = None;
             self.opencode_go_forecasts.clear();
             self.opencode_go_samples.clear();
+            self.opencode_go_previous_statuses.clear();
         }
         self.update_config(|c| c.opencode_go_enabled = Some(enabled));
+        Ok(())
     }
 
     pub fn ui_state(&self) -> UiState {
@@ -280,6 +364,7 @@ impl Monitor {
             sync_error_message: self.sync_error_message.clone(),
             safety_buffer: self.safety_buffer,
             launch_at_login: self.launch_at_login,
+            codex_enabled: self.codex_enabled,
             opencode_go: self.opencode_go.clone(),
             opencode_go_error: self.opencode_go_error.clone(),
             opencode_go_forecasts: self.opencode_go_forecasts.clone(),
@@ -302,6 +387,26 @@ impl Monitor {
         if let Ok(json) = serde_json::to_string_pretty(&config) {
             let _ = std::fs::write(&self.config_path, json);
         }
+    }
+}
+fn default_codex_enabled(config_exists: bool, configured: Option<bool>) -> bool {
+    configured.unwrap_or(config_exists)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_codex_enabled;
+
+    #[test]
+    fn new_install_starts_without_codex_provider() {
+        assert!(!default_codex_enabled(false, None));
+    }
+
+    #[test]
+    fn existing_and_explicit_provider_settings_are_preserved() {
+        assert!(default_codex_enabled(true, None));
+        assert!(default_codex_enabled(false, Some(true)));
+        assert!(!default_codex_enabled(true, Some(false)));
     }
 }
 

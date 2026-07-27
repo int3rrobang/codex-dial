@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 winreg = "0.55"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Shell"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 regex = "1"
 
