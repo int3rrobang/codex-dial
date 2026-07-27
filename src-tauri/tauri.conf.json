@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-v2-schema/refs/heads/main/tauri.conf.json",
   "productName": "Codex Dial",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "identifier": "com.github.codex-dial",
   "build": {
     "frontendDist": "../dist",
