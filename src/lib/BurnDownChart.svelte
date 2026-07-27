@@ -23,7 +23,7 @@
   let chart: Chart | null = null;
 
   function getStartsAt() {
-    return win.resets_at - win.duration_minutes * 60;
+    return forecast.window_started_at;
   }
 
   function buildObserved(): { x: number; y: number }[] {
@@ -118,7 +118,7 @@
             borderColor: "#6c9eff",
             borderWidth: 2,
             pointRadius: 0,
-            stepped: "end" as const,
+            stepped: "after" as const,
           },
           {
             label: "Current",
@@ -207,7 +207,7 @@
 </div>
 
 <style>
-  .chart-container { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 120px; }
+  .chart-container { display: flex; flex-direction: column; gap: 8px; }
   .legend { display: flex; gap: 12px; font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .line { display: inline-block; width: 18px; height: 0; border-top: 2px solid; }
@@ -216,5 +216,6 @@
   .line.current { border-top-style: dashed; }
   .line.gray { border-color: #9090a8; border-top-style: dotted; }
   .line.dashed { border-top-style: dashed; }
-  .canvas-wrap { flex: 1; min-height: 100px; position: relative; }
+  .canvas-wrap { height: 140px; position: relative; }
+  :global(.app.compact .canvas-wrap) { height: 120px; }
 </style>

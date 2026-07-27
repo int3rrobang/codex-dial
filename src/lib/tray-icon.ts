@@ -3,6 +3,7 @@ import { Image as TauriImage } from "@tauri-apps/api/image";
 import { TrayIcon } from "@tauri-apps/api/tray";
 
 export interface LimitTrayState {
+  backendName: string;
   remaining: number;
   currentPace: number;
   suggestedPace: number;
@@ -99,9 +100,8 @@ export async function updateLimitTray(state: LimitTrayState): Promise<void> {
   const remaining = clamp(state.remaining, 0, 100);
   const warning = state.currentPace > state.suggestedPace;
   const visualKey = `${Math.round(remaining)}:${warning}`;
-
   const tooltipParts = [
-    `Codex: ${Math.round(remaining)}% remaining`,
+    `${state.backendName}: ${Math.round(remaining)}% remaining`,
     `${state.currentPace.toFixed(1)}%/day`,
   ];
   if (warning) tooltipParts.push("slow down");

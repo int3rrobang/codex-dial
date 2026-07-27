@@ -13,12 +13,9 @@ pub fn evaluate(
 ) -> Forecast {
     let now_f = now as f64;
     let resets_at_f = window.resets_at as f64;
-    let starts_at_f = window.starts_at() as f64;
-
     let days_left = ((resets_at_f - now_f) / DAY_SECS).max(0.0);
-    let elapsed_days = ((now_f - starts_at_f) / DAY_SECS).max(1.0 / 24.0);
 
-    let current_samples: Vec<&UsageSample> = {
+    let all_current_samples: Vec<&UsageSample> = {
         let mut s: Vec<_> = samples
             .iter()
             .filter(|s| s.resets_at == window.resets_at && (s.observed_at as i64) <= now)
@@ -26,19 +23,27 @@ pub fn evaluate(
         s.sort_by_key(|s| s.observed_at);
         s
     };
+    let window_started_at = detect_window_start(window, &all_current_samples, now);
+    let starts_at_f = window_started_at as f64;
+    let elapsed_days = ((now_f - starts_at_f) / DAY_SECS).max(1.0 / 24.0);
+    let current_samples: Vec<&UsageSample> = all_current_samples
+        .into_iter()
+        .filter(|s| s.observed_at >= window_started_at)
+        .collect();
 
     let window_rate = ((100.0 - window.remaining_percent) / elapsed_days).max(0.0);
 
-    let recent_rate = if let (Some(first), Some(last)) = (current_samples.first(), current_samples.last()) {
-        if last.observed_at > first.observed_at {
-            let days = (last.observed_at - first.observed_at) as f64 / DAY_SECS;
-            ((first.remaining_percent as f64 - last.remaining_percent as f64) / days).max(0.0)
+    let recent_rate =
+        if let (Some(first), Some(last)) = (current_samples.first(), current_samples.last()) {
+            if last.observed_at > first.observed_at {
+                let days = (last.observed_at - first.observed_at) as f64 / DAY_SECS;
+                ((first.remaining_percent as f64 - last.remaining_percent as f64) / days).max(0.0)
+            } else {
+                window_rate
+            }
         } else {
             window_rate
-        }
-    } else {
-        window_rate
-    };
+        };
 
     let current_rate = if current_samples.len() > 1 {
         0.7 * recent_rate + 0.3 * window_rate
@@ -66,13 +71,17 @@ pub fn evaluate(
                     return None;
                 }
                 let days = (last.observed_at - first.observed_at) as f64 / DAY_SECS;
-                Some(((first.remaining_percent as f64 - last.remaining_percent as f64) / days).max(0.0))
+                Some(
+                    ((first.remaining_percent as f64 - last.remaining_percent as f64) / days)
+                        .max(0.0),
+                )
             })
             .collect()
     };
 
     let historical_rate = if historical_rates.is_empty() {
-        token_bootstrap_rate(window, window_rate, token_history, now).unwrap_or(current_rate)
+        token_bootstrap_rate(window_started_at, window_rate, token_history, now)
+            .unwrap_or(current_rate)
     } else {
         historical_rates.iter().sum::<f64>() / historical_rates.len() as f64
     };
@@ -94,7 +103,9 @@ pub fn evaluate(
         || (previous_status == Some(PaceStatus::SlowDown) && safety < safety_buffer + 1.0)
     {
         PaceStatus::SlowDown
-    } else if expected > 8.0 || (previous_status == Some(PaceStatus::RoomToUseMore) && expected > 7.0) {
+    } else if expected > 8.0
+        || (previous_status == Some(PaceStatus::RoomToUseMore) && expected > 7.0)
+    {
         PaceStatus::RoomToUseMore
     } else {
         PaceStatus::OnTrack
@@ -102,6 +113,7 @@ pub fn evaluate(
 
     Forecast {
         status,
+        window_started_at,
         expected_remaining_at_reset: expected,
         safety_remaining_at_reset: safety,
         historical_remaining_at_reset: historical,
@@ -112,15 +124,38 @@ pub fn evaluate(
     }
 }
 
+const RESET_JUMP_PERCENT: f64 = 10.0;
+
+fn detect_window_start(window: &UsageWindow, samples: &[&UsageSample], now: i64) -> i64 {
+    let nominal_start = window.starts_at().min(now);
+    let mut start = nominal_start;
+    let mut previous: Option<&UsageSample> = None;
+
+    for sample in samples {
+        if sample.observed_at < nominal_start || sample.observed_at > now {
+            continue;
+        }
+        if let Some(previous) = previous {
+            let increase = sample.remaining_percent as f64 - previous.remaining_percent as f64;
+            if increase >= RESET_JUMP_PERCENT {
+                start = sample.observed_at;
+            }
+        }
+        previous = Some(sample);
+    }
+
+    start
+}
+
 fn token_bootstrap_rate(
-    window: &UsageWindow,
+    window_started_at: i64,
     window_rate: f64,
     token_history: &[TokenDay],
     now: i64,
 ) -> Option<f64> {
     let day_number = |ts: i64| -> i64 { (ts as f64 / DAY_SECS).floor() as i64 };
 
-    let start = day_number(window.starts_at());
+    let start = day_number(window_started_at);
     let today = day_number(now);
 
     let mut buckets: HashMap<i64, i64> = HashMap::new();
@@ -139,7 +174,9 @@ fn token_bootstrap_rate(
     }
 
     let current_count = latest - start + 1;
-    let current_tokens: i64 = (start..=latest).map(|d| buckets.get(&d).copied().unwrap_or(0)).sum();
+    let current_tokens: i64 = (start..=latest)
+        .map(|d| buckets.get(&d).copied().unwrap_or(0))
+        .sum();
 
     let history_end = start - 1;
     let history_start = first.max(history_end - 27);
@@ -148,7 +185,9 @@ fn token_bootstrap_rate(
     }
 
     let history_count = history_end - history_start + 1;
-    let history_tokens: i64 = (history_start..=history_end).map(|d| buckets.get(&d).copied().unwrap_or(0)).sum();
+    let history_tokens: i64 = (history_start..=history_end)
+        .map(|d| buckets.get(&d).copied().unwrap_or(0))
+        .sum();
 
     let current_average = current_tokens as f64 / current_count as f64;
     let historical_average = history_tokens as f64 / history_count as f64;
@@ -159,4 +198,43 @@ fn token_bootstrap_rate(
 
     let relative_pace = (historical_average / current_average).clamp(0.25, 4.0);
     Some(window_rate * relative_pace)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate;
+    use crate::models::{UsageSample, UsageWindow};
+
+    #[test]
+    fn detects_an_early_reset_inside_an_existing_window() {
+        const NOW: i64 = 1_000_000_000;
+        const DAY: i64 = 86_400;
+        let window = UsageWindow {
+            remaining_percent: 90.0,
+            resets_at: NOW + DAY,
+            duration_minutes: 10_080,
+        };
+        let samples = vec![
+            UsageSample {
+                observed_at: NOW - 5 * DAY,
+                remaining_percent: 20,
+                resets_at: window.resets_at,
+            },
+            UsageSample {
+                observed_at: NOW - DAY,
+                remaining_percent: 100,
+                resets_at: window.resets_at,
+            },
+            UsageSample {
+                observed_at: NOW,
+                remaining_percent: 90,
+                resets_at: window.resets_at,
+            },
+        ];
+
+        let forecast = evaluate(&window, &samples, &[], 3.0, NOW, None);
+
+        assert_eq!(forecast.window_started_at, NOW - DAY);
+        assert!((forecast.expected_remaining_at_reset - 80.0).abs() < 0.01);
+    }
 }

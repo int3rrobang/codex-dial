@@ -1,3 +1,10 @@
+export interface WorkArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface UsageWindow {
   remaining_percent: number;
   resets_at: number;
@@ -21,17 +28,27 @@ export interface LimitReading {
   window: UsageWindow;
 }
 
+export interface BankedResetCredit {
+  title: string;
+  description: string | null;
+  expires_at: number;
+}
+
+
 export interface UsageSnapshot {
   main_limit: LimitReading;
   other_limits: LimitReading[];
   token_history: TokenDay[];
-  emergency_reset_count: number;
+  banked_reset_count: number;
+  banked_reset_credits: BankedResetCredit[];
   fetched_at: number;
 }
+
 
 export type PaceStatus = "slowDown" | "onTrack" | "roomToUseMore";
 
 export interface Forecast {
+  window_started_at: number;
   status: PaceStatus;
   expected_remaining_at_reset: number;
   safety_remaining_at_reset: number;
@@ -51,5 +68,23 @@ export interface UiState {
   sync_folder_name: string | null;
   sync_error_message: string | null;
   safety_buffer: number;
+  codex_enabled: boolean;
   launch_at_login: boolean;
+  opencode_go: OpenCodeGoSnapshot | null;
+  opencode_go_error: string | null;
+  opencode_go_forecasts: Forecast[];
+  opencode_go_samples: UsageSample[];
+  opencode_go_enabled: boolean;
+}
+
+export interface OpenCodeGoWindow {
+  name: string;
+  remaining_percent: number;
+  resets_at: number;
+  duration_minutes: number;
+}
+
+export interface OpenCodeGoSnapshot {
+  windows: OpenCodeGoWindow[];
+  fetched_at: number;
 }

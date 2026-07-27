@@ -14,12 +14,17 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .manage(MonitorState::new(Monitor::new()))
         .invoke_handler(tauri::generate_handler![
+            commands::get_work_area,
             commands::get_state,
             commands::refresh,
             commands::set_safety_buffer,
             commands::set_launch_at_login,
             commands::choose_sync_folder,
+            commands::set_codex_enabled,
             commands::stop_sync,
+            commands::set_opencode_cookie,
+            commands::set_opencode_workspace_id,
+            commands::set_opencode_go_enabled,
         ])
         .setup(|app| {
             let refresh_item = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
@@ -72,15 +77,18 @@ fn main() {
                 })
                 .build(app)?;
 
-            // Position window near the system tray (bottom-right of primary monitor)
+            // Start at the taskbar edge; the frontend refines the size once
+            // its content has rendered.
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(Some(monitor)) = window.primary_monitor() {
                     let scale = monitor.scale_factor();
-                    let mon_size = monitor.size();
+                    let work_area = monitor.work_area();
                     let win_width = 380.0 * scale;
                     let win_height = 480.0 * scale;
-                    let x = mon_size.width as f64 - win_width - 16.0 * scale;
-                    let y = mon_size.height as f64 - win_height - 48.0 * scale;
+                    let x = work_area.position.x as f64 + work_area.size.width as f64
+                        - win_width
+                        - 16.0 * scale;
+                    let y = work_area.position.y as f64 + work_area.size.height as f64 - win_height;
                     let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
                 }
             }
@@ -107,7 +115,8 @@ fn main() {
 
                     let time_since_refresh = now.duration_since(last_refresh);
                     let woke_from_sleep = gap > std::time::Duration::from_secs(60);
-                    let interval_elapsed = time_since_refresh >= std::time::Duration::from_secs(600);
+                    let interval_elapsed =
+                        time_since_refresh >= std::time::Duration::from_secs(600);
 
                     if woke_from_sleep || interval_elapsed {
                         let state = app_handle.state::<MonitorState>();
