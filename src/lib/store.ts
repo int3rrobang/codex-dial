@@ -1,6 +1,6 @@
 import { writable } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
-import type { UiState } from "./types";
+import type { UiState, WorkArea } from "./types";
 
 export const uiState = writable<UiState>({
   snapshot: null,
@@ -10,6 +10,7 @@ export const uiState = writable<UiState>({
   error_message: null,
   sync_folder_name: null,
   sync_error_message: null,
+  codex_enabled: true,
   safety_buffer: 3,
   launch_at_login: true,
   opencode_go: null,
@@ -20,6 +21,10 @@ export const uiState = writable<UiState>({
 });
 
 export const view = writable<"dashboard" | "settings">("dashboard");
+
+export async function getWorkArea(): Promise<WorkArea> {
+  return invoke<WorkArea>("get_work_area");
+}
 
 export async function fetchState() {
   const state = await invoke<UiState>("get_state");
@@ -40,6 +45,12 @@ export async function setSafetyBuffer(value: number) {
 export async function setLaunchAtLogin(enabled: boolean) {
   const state = await invoke<UiState>("set_launch_at_login", { enabled });
   uiState.set(state);
+}
+
+export async function setCodexEnabled(enabled: boolean) {
+  const state = await invoke<UiState>("set_codex_enabled", { enabled });
+  uiState.set(state);
+  if (enabled) await refresh();
 }
 
 export async function chooseSyncFolder() {

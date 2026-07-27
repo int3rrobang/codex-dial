@@ -2,35 +2,35 @@
   import type { UiState, PaceStatus, Forecast, UsageWindow, UsageSample } from "./types";
   import { refresh, view } from "./store";
   import BurnDownChart from "./BurnDownChart.svelte";
-  import { exit } from "@tauri-apps/plugin-process";
+
 
   let { data }: { data: UiState } = $props();
 
-  let tab = $state<"codex" | "opencode">("codex");
   let ocgWindow = $state(1);
   let showOtherLimits = $state(false);
+  let tab = $state<"codex" | "opencode">("codex");
   let showOtherWindows = $state(false);
-  let updatedAgo = $state("Updated just now");
+  let showBankedResets = $state(false);
+  let bankedResetStat = $state<HTMLDivElement>();
 
-  function updateAgoText() {
-    const fetchedAt = tab === "codex" ? data.snapshot?.fetched_at : data.opencode_go?.fetched_at;
-    if (!fetchedAt) return;
-    const seconds = Math.max(Date.now() / 1000 - fetchedAt, 0);
-    if (seconds < 60) updatedAgo = "Updated just now";
-    else if (seconds < 3600) updatedAgo = `Updated ${Math.floor(seconds / 60)} min ago`;
-    else if (seconds < 86400) {
-      const h = Math.floor(seconds / 3600);
-      updatedAgo = `Updated ${h} ${h === 1 ? "hr" : "hrs"} ago`;
-    } else {
-      const d = Math.floor(seconds / 86400);
-      updatedAgo = `Updated ${d} ${d === 1 ? "day" : "days"} ago`;
+  function handleWindowClick(event: MouseEvent) {
+    if (
+      showBankedResets
+      && bankedResetStat
+      && !bankedResetStat.contains(event.target as Node)
+    ) {
+      showBankedResets = false;
     }
   }
 
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") showBankedResets = false;
+  }
+
+
   $effect(() => {
-    updateAgoText();
-    const interval = setInterval(updateAgoText, 60000);
-    return () => clearInterval(interval);
+    if (!data.codex_enabled && tab === "codex") tab = "opencode";
+    if (!data.opencode_go_enabled && tab === "opencode") tab = "codex";
   });
 
   function statusTitle(status: PaceStatus): string {
@@ -84,6 +84,13 @@
     });
   }
 
+  function formatResetDeadline(ts: number): string {
+    return new Date(ts * 1000).toLocaleString("en-US", {
+      year: "numeric", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+  }
+
   function relativeTime(ts: number): string {
     const seconds = Math.max(ts - Date.now() / 1000, 0);
     const days = Math.floor(seconds / 86400);
@@ -93,6 +100,11 @@
     if (hours > 0) return `${hours}h ${mins}m`;
     return `${mins}m`;
   }
+  function resetExpiryText(ts: number): string {
+    const remaining = ts - Date.now() / 1000;
+    return remaining <= 0 ? "expired" : `in ${relativeTime(ts)}`;
+  }
+
 
   function currentWindowSamples() {
     if (!data.snapshot) return [];
@@ -118,15 +130,24 @@
     return { remaining_percent: w.remaining_percent, resets_at: w.resets_at, duration_minutes: w.duration_minutes };
   }
 </script>
+<svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
 
-{#if data.opencode_go_enabled}
+{#if !data.codex_enabled && !data.opencode_go_enabled}
+  <div class="empty-state provider-empty">
+    <p class="provider-title">No usage provider is enabled</p>
+    <p>Enable Codex CLI or OpenCode Go in Settings to start monitoring usage.</p>
+    <button class="retry" onclick={() => view.set("settings")}>Open Settings</button>
+  </div>
+{:else}
+{#if data.codex_enabled && data.opencode_go_enabled}
   <div class="tabs">
     <button class="tab" class:active={tab === "codex"} onclick={() => tab = "codex"}>Codex</button>
     <button class="tab" class:active={tab === "opencode"} onclick={() => tab = "opencode"}>OpenCode Go</button>
   </div>
 {/if}
 
-{#if tab === "codex"}
+<div class="tab-panels">
+  <div class="tab-panel" class:inactive={tab !== "codex"} aria-hidden={tab !== "codex"}>
   {#if data.snapshot && data.forecast}
     {@const snapshot = data.snapshot}
     {@const forecast = data.forecast}
@@ -176,9 +197,54 @@
           </div>
         </div>
         <div class="stats-col">
-          <div class="stat-item">
+          <div class="stat-item banked-reset-stat" bind:this={bankedResetStat}>
             <span class="stat-label">Banked resets</span>
-            <span class="stat-value">{snapshot.emergency_reset_count}</span>
+            {#if snapshot.banked_reset_count > 0}
+              <button
+                class="banked-reset-trigger"
+                aria-expanded={showBankedResets}
+                aria-controls="banked-reset-details"
+                aria-label={`${snapshot.banked_reset_count} banked reset${snapshot.banked_reset_count === 1 ? "" : "s"}${snapshot.banked_reset_credits[0] ? `; next expires ${formatResetDeadline(snapshot.banked_reset_credits[0].expires_at)}` : ""}`}
+                onclick={() => showBankedResets = !showBankedResets}
+              >
+                <span class="stat-value">{snapshot.banked_reset_count}</span>
+                {#if snapshot.banked_reset_credits.length > 0}
+                  <span class="banked-next-deadline">Next {formatResetTime(snapshot.banked_reset_credits[0].expires_at)}</span>
+                {/if}
+                <span class="chevron" class:open={showBankedResets}>&#9656;</span>
+              </button>
+            {:else}
+              <span class="stat-value">0</span>
+            {/if}
+
+            {#if showBankedResets && snapshot.banked_reset_count > 0}
+              <div id="banked-reset-details" class="reset-popover" role="dialog" aria-label="Banked reset deadlines">
+                <div class="reset-popover-title">Banked reset deadlines</div>
+                {#if snapshot.banked_reset_credits.length > 0}
+                  <div class="reset-list">
+                    {#each snapshot.banked_reset_credits as credit}
+                      <div class="reset-credit">
+                        <div class="reset-credit-title">{credit.title}</div>
+                        <div class="reset-credit-deadline">Expires {formatResetDeadline(credit.expires_at)}</div>
+                        <div class="reset-credit-relative">{resetExpiryText(credit.expires_at)}</div>
+                        {#if credit.description}
+                          <div class="reset-credit-description">{credit.description}</div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                  {#if snapshot.banked_reset_credits.length < snapshot.banked_reset_count}
+                    <p class="reset-note">
+                      Showing {snapshot.banked_reset_credits.length} of {snapshot.banked_reset_count} deadlines returned by Codex.
+                    </p>
+                  {/if}
+                {:else}
+                  <p class="reset-note">
+                    Codex reported {snapshot.banked_reset_count} banked reset{snapshot.banked_reset_count === 1 ? "" : "s"} but did not return their deadlines. Refresh later or update the Codex CLI.
+                  </p>
+                {/if}
+              </div>
+            {/if}
           </div>
           <div class="stat-item">
             <span class="stat-label">Nearest reset</span>
@@ -214,13 +280,6 @@
         <div class="error">&#9888; {data.error_message}</div>
       {/if}
 
-      <hr />
-      <div class="footer">
-        <span class="updated">{updatedAgo}</span>
-        <span class="spacer"></span>
-        <button onclick={() => view.set("settings")} title="Settings">&#9881;</button>
-        <button onclick={() => exit(0)}>Quit</button>
-      </div>
     </div>
   {:else}
     <div class="empty-state">
@@ -234,7 +293,8 @@
       {/if}
     </div>
   {/if}
-{:else}
+  </div>
+  <div class="tab-panel" class:inactive={tab !== "opencode"} aria-hidden={tab !== "opencode"}>
   {#if data.opencode_go && data.opencode_go_forecasts.length > 0}
     {@const ocg = data.opencode_go}
     {@const idx = Math.min(ocgWindow, ocg.windows.length - 1)}
@@ -332,13 +392,6 @@
         <div class="error">&#9888; {data.opencode_go_error}</div>
       {/if}
 
-      <hr />
-      <div class="footer">
-        <span class="updated">{updatedAgo}</span>
-        <span class="spacer"></span>
-        <button onclick={() => view.set("settings")} title="Settings">&#9881;</button>
-        <button onclick={() => exit(0)}>Quit</button>
-      </div>
     </div>
   {:else}
     <div class="empty-state">
@@ -352,10 +405,15 @@
       {/if}
     </div>
   {/if}
+  </div>
+</div>
 {/if}
 
 <style>
   .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab-panels { display: grid; }
+  .tab-panel { grid-area: 1 / 1; min-width: 0; }
+  .tab-panel.inactive { visibility: hidden; pointer-events: none; }
   .tab { padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; background: none; color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; }
   .tab.active { background: var(--surface); color: var(--text-primary); border-color: var(--accent-blue); }
   .window-tabs { display: flex; gap: 2px; flex-wrap: nowrap; white-space: nowrap; }
@@ -369,9 +427,24 @@
   .status-section { display: flex; flex-direction: column; gap: 4px; }
   .status-title { font-weight: 600; font-size: 14px; }
   .status-message { color: var(--text-secondary); }
-  .stats-grid { display: flex; gap: 24px; }
-  .stats-col { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); grid-auto-flow: column; column-gap: 24px; row-gap: 8px; }
+  .stats-col { display: contents; }
   .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .banked-reset-stat { position: relative; }
+  .banked-reset-trigger { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; color: var(--text-primary); text-align: left; }
+  .banked-reset-trigger:hover { background: none; }
+  .banked-next-deadline { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .reset-popover { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; width: min(300px, calc(100vw - 32px)); max-height: 240px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+  .reset-popover-title { margin-bottom: 8px; color: var(--text-primary); font-size: 12px; font-weight: 600; }
+  .reset-list { display: flex; flex-direction: column; gap: 9px; }
+  .reset-credit { padding-bottom: 9px; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .reset-credit:last-child { padding-bottom: 0; border-bottom: none; }
+  .reset-credit-title { color: var(--text-primary); font-weight: 600; }
+  .reset-credit-deadline { margin-top: 2px; color: var(--text-secondary); }
+  .reset-credit-relative { color: var(--accent-blue); font-variant-numeric: tabular-nums; }
+  .reset-credit-description { margin-top: 2px; color: var(--text-secondary); }
+  .reset-note { color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
+
   .stat-label { font-size: 11px; color: var(--text-secondary); }
   .stat-value { font-size: 13px; font-variant-numeric: tabular-nums; }
   hr { border: none; border-top: 1px solid var(--border); }
@@ -385,11 +458,13 @@
   .limit-pct { font-variant-numeric: tabular-nums; }
   .limit-reset { color: var(--text-secondary); }
   .error { font-size: 12px; color: var(--text-secondary); }
-  .footer { display: flex; align-items: center; gap: 4px; }
-  .updated { font-size: 11px; color: var(--text-secondary); }
   .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 200px; color: var(--text-secondary); text-align: center; }
+  .provider-title { color: var(--text-primary); font-weight: 600; }
   .retry { background: var(--surface); padding: 6px 16px; border-radius: 6px; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
   .spinner.large { width: 24px; height: 24px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  :global(.app.compact .tabs) { margin-bottom: 8px; }
+  :global(.app.compact .dashboard) { gap: 10px; }
+  :global(.app.compact .stats-col) { gap: 5px; }
 </style>

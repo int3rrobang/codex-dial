@@ -23,7 +23,7 @@
   let chart: Chart | null = null;
 
   function getStartsAt() {
-    return win.resets_at - win.duration_minutes * 60;
+    return forecast.window_started_at;
   }
 
   function buildObserved(): { x: number; y: number }[] {
@@ -118,7 +118,7 @@
             borderColor: "#6c9eff",
             borderWidth: 2,
             pointRadius: 0,
-            stepped: "end" as const,
+            stepped: "after" as const,
           },
           {
             label: "Current",
@@ -217,4 +217,5 @@
   .line.gray { border-color: #9090a8; border-top-style: dotted; }
   .line.dashed { border-top-style: dashed; }
   .canvas-wrap { height: 140px; position: relative; }
+  :global(.app.compact .canvas-wrap) { height: 120px; }
 </style>

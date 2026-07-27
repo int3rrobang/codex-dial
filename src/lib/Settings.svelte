@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { UiState } from "./types";
-  import { view, setSafetyBuffer, setLaunchAtLogin, chooseSyncFolder, stopSync, setOpenCodeCookie, setOpenCodeWorkspaceId, setOpenCodeGoEnabled } from "./store";
+  import { view, setSafetyBuffer, setLaunchAtLogin, chooseSyncFolder, stopSync, setCodexEnabled, setOpenCodeCookie, setOpenCodeWorkspaceId, setOpenCodeGoEnabled } from "./store";
 
   let { data }: { data: UiState } = $props();
 
@@ -46,6 +46,27 @@
   </div>
 
   <div class="setting-group">
+    <div class="section-title">Usage backends</div>
+    <p class="hint">Enable either backend, or both to compare their usage. You can leave both disabled until you are ready to configure a provider.</p>
+    <label class="toggle-label">
+      <input
+        type="checkbox"
+        checked={data.codex_enabled}
+        onchange={(e) => setCodexEnabled(e.currentTarget.checked)}
+      />
+      Codex CLI
+    </label>
+    <label class="toggle-label">
+      <input
+        type="checkbox"
+        checked={data.opencode_go_enabled}
+        onchange={(e) => setOpenCodeGoEnabled(e.currentTarget.checked)}
+      />
+      OpenCode Go
+    </label>
+  </div>
+
+  <div class="setting-group">
     <div class="section-title">History sync</div>
     <p class="hint">Keep usage history in a folder synced across your PCs (OneDrive, Dropbox, etc.).</p>
 
@@ -58,7 +79,7 @@
       <button class="choose-btn" onclick={() => chooseSyncFolder()}>Choose Folder...</button>
     {/if}
 
-    <p class="hint">Use this folder only on PCs signed in to the same Codex account.</p>
+    <p class="hint">Use this folder only on PCs signed in to the same account.</p>
 
     {#if data.sync_error_message}
       <p class="error">&#9888; {data.sync_error_message}</p>
@@ -66,15 +87,7 @@
   </div>
 
   <div class="setting-group">
-    <div class="section-title">OpenCode Go</div>
-    <label class="toggle-label">
-      <input
-        type="checkbox"
-        checked={data.opencode_go_enabled}
-        onchange={(e) => setOpenCodeGoEnabled(e.currentTarget.checked)}
-      />
-      Enable OpenCode Go tab
-    </label>
+    <div class="section-title">OpenCode Go setup</div>
 
     {#if data.opencode_go_enabled}
       <p class="hint">Paste your opencode.ai session cookie from browser DevTools (Application → Cookies → auth or __Host-auth value).</p>
