@@ -1,7 +1,6 @@
 # Codex Dial
 
-A Windows system-tray app that tracks your OpenAI Codex usage allowance and helps you pace yourself until the limit resets.
-
+A small-ish, fast Windows tray utility with a nice graph that tracks your Codex/OpenCode Go rate limits and helps you pace yourself. 
 Ported from [thrr87/codex-limits](https://github.com/thrr87/codex-limits) (macOS) to Windows using Tauri 2, Rust, and Svelte.
 
 ![Codex Dial screenshot](docs/screenshot.png)
@@ -124,6 +123,7 @@ so Cargo build artifacts do not trigger frontend watcher errors.
 
 Production installers are written under:
 
+```
 src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/
 src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/
 ```
