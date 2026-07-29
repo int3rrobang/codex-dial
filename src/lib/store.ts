@@ -1,6 +1,6 @@
 import { writable } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
-import type { UiState, WorkArea } from "./types";
+import type { AccentPalette, UiState, WorkArea } from "./types";
 
 export const uiState = writable<UiState>({
   snapshot: null,
@@ -22,8 +22,16 @@ export const uiState = writable<UiState>({
 
 export const view = writable<"dashboard" | "settings">("dashboard");
 
+export async function getAccentPalette(): Promise<AccentPalette> {
+  return invoke<AccentPalette>("get_accent_palette");
+}
+
 export async function getWorkArea(): Promise<WorkArea> {
   return invoke<WorkArea>("get_work_area");
+}
+
+export async function setFlyoutBounds(x: number, y: number, width: number, height: number) {
+  await invoke("set_flyout_bounds", { x, y, width, height });
 }
 
 export async function fetchState() {

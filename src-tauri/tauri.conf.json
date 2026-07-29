@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-v2-schema/refs/heads/main/tauri.conf.json",
   "productName": "Codex Dial",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "identifier": "com.github.codex-dial",
   "build": {
     "frontendDist": "../dist",
@@ -17,18 +17,15 @@
         "title": "Codex Dial",
         "width": 380,
         "height": 480,
-        "minWidth": 320,
-        "minHeight": 380,
-        "maxWidth": 600,
-        "maxHeight": 900,
-        "resizable": true,
+        "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
         "focus": true,
-        "shadow": false,
-        "backgroundColor": "#1e1e2e"
+        "shadow": true,
+        "transparent": true,
+        "backgroundColor": "#00000000"
       }
     ],
     "security": {

@@ -1,48 +1,395 @@
 :root {
-  --bg: #1e1e2e;
-  --surface: #2a2a3c;
-  --text: #e0e0e8;
-  --text-secondary: #9090a8;
-  --accent-blue: #6c9eff;
-  --accent-green: #5cd685;
-  --accent-red: #ff6b6b;
-  --border: #3a3a4c;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: light dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 13px;
+  --text-primary: #1a1a1a;
+  --text-secondary: #5f5f5f;
+  --text-disabled: #a8a8a8;
+  --accent-default: var(--windows-accent-dark-1, #0f6cbd);
+  --accent-text: var(--windows-accent-dark-1-text, #f9f9f9);
+  --accent-secondary: var(--windows-accent-dark-2, #115ea3);
+  --accent-tertiary: var(--windows-accent-dark-3, #003966);
+  --control-fill-default: #fbfbfb;
+  --control-fill-secondary: #f5f5f5;
+  --control-fill-tertiary: #ebebeb;
+  --control-fill-input-active: #fcfcfc;
+  --subtle-fill-secondary: #f5f5f5;
+  --subtle-fill-tertiary: #e7e7e7;
+  --control-stroke-default: #d1d1d1;
+  --control-strong-stroke-default: #777777;
+  --card-background: #fbfbfb;
+  --card-stroke: #e2e2e2;
+  --solid-background-base: #f3f3f3;
+  --solid-background-secondary: #e9e9e9;
+  --solid-background-tertiary: #dedede;
+  --system-success: #107c10;
+  --system-critical: #c42b1c;
+  --system-caution: #9d5d00;
+  --system-background-critical: #fde7e9;
+  --focus-stroke: var(--accent-default);
+  --flyout-background: rgb(243 243 243 / 80%);
+  --flyout-card-background: rgb(251 251 251 / 82%);
+  --flyout-footer-background: rgb(243 243 243 / 86%);
+  --scrollbar-thumb: rgb(95 95 95 / 55%);
+  --scrollbar-thumb-hover: rgb(95 95 95 / 75%);
+  --control-radius: 4px;
+  --overlay-radius: 12px;
+  --flyout-radius: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --duration-fast: 120ms;
+  --accent-subtle-fill: #e8f2fb;
+  --accent-control-fill: #dbeefa;
+
+
+  /* Compatibility aliases for existing view styles. */
+  --bg: var(--flyout-background);
+  --surface: var(--flyout-card-background);
+  --text: var(--text-primary);
+  --border: var(--control-stroke-default);
+  --accent-blue: var(--accent-default);
+  --accent-green: var(--system-success);
+  --accent-red: var(--system-critical);
 }
 
-* {
-  margin: 0;
-  padding: 0;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: #f3f3f3;
+    --text-secondary: #c2c2c2;
+    --text-disabled: #777777;
+    --accent-default: var(--windows-accent-light-1, #62a9e8);
+    --accent-text: var(--windows-accent-light-1-text, #13263b);
+    --accent-secondary: var(--windows-accent-light-2, #8fc7f0);
+    --accent-tertiary: var(--windows-accent-light-3, #c9e7fa);
+    --control-fill-default: #2b2b2b;
+    --control-fill-secondary: #303030;
+    --control-fill-tertiary: #3a3a3a;
+    --control-fill-input-active: #202020;
+    --subtle-fill-secondary: #303030;
+    --subtle-fill-tertiary: #3b3b3b;
+    --control-stroke-default: #474747;
+    --control-strong-stroke-default: #929292;
+    --card-background: #2a2a2a;
+    --card-stroke: #414141;
+    --solid-background-base: #202020;
+    --solid-background-secondary: #282828;
+    --solid-background-tertiary: #303030;
+    --system-success: #6ccb5f;
+    --system-critical: #ff99a4;
+    --system-caution: #f7ca76;
+    --system-background-critical: #44272b;
+    --focus-stroke: var(--accent-default);
+    --flyout-background: rgb(24 24 24 / 88%);
+    --flyout-card-background: rgb(38 38 38 / 86%);
+    --flyout-footer-background: rgb(24 24 24 / 91%);
+    --scrollbar-thumb: rgb(194 194 194 / 55%);
+    --scrollbar-thumb-hover: rgb(194 194 194 / 75%);
+    --accent-subtle-fill: #1d354c;
+    --accent-control-fill: #244966;
+
+  }
+}
+
+
+@supports (color: color-mix(in srgb, black, white)) {
+  :root {
+    --accent-subtle-fill: color-mix(in srgb, var(--accent-default) 12%, transparent);
+    --accent-control-fill: color-mix(in srgb, var(--accent-default) 20%, transparent);
+
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  @supports (color: color-mix(in srgb, black, white)) {
+    :root {
+      --accent-subtle-fill: color-mix(in srgb, var(--accent-default) 18%, transparent);
+      --accent-control-fill: color-mix(in srgb, var(--accent-default) 28%, transparent);
+
+    }
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    color-scheme: normal;
+    --text-primary: CanvasText;
+    --text-secondary: GrayText;
+    --text-disabled: GrayText;
+    --accent-default: Highlight;
+    --accent-text: HighlightText;
+    --accent-secondary: Highlight;
+    --accent-tertiary: Highlight;
+    --control-fill-default: ButtonFace;
+    --control-fill-secondary: ButtonFace;
+    --control-fill-tertiary: ButtonFace;
+    --control-fill-input-active: Field;
+    --subtle-fill-secondary: ButtonFace;
+    --subtle-fill-tertiary: ButtonFace;
+    --control-stroke-default: ButtonText;
+    --control-strong-stroke-default: ButtonText;
+    --card-background: Canvas;
+    --card-stroke: ButtonText;
+    --solid-background-base: Canvas;
+    --solid-background-secondary: Canvas;
+    --solid-background-tertiary: Canvas;
+    --system-success: LinkText;
+    --system-critical: MarkText;
+    --system-caution: Highlight;
+    --system-background-critical: Canvas;
+    --focus-stroke: Highlight;
+    --flyout-background: Canvas;
+    --flyout-card-background: Canvas;
+    --flyout-footer-background: Canvas;
+    --scrollbar-thumb: ButtonText;
+    --scrollbar-thumb-hover: Highlight;
+    --accent-subtle-fill: Highlight;
+    --accent-control-fill: Highlight;
+
+  }
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
+  width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
+html,
+body,
+#app {
+  background: transparent;
+}
+
 body {
-  background: var(--bg);
-  color: var(--text);
+  margin: 0;
+  color: var(--text-primary);
+  font-family: inherit;
+  line-height: 1.35;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
+  width: 380px;
   height: 100%;
 }
 
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--accent-default);
+}
+
+
+input,
+textarea {
+  user-select: text;
+}
+
 button {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
+  appearance: none;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  transition:
+    background-color var(--duration-fast) ease-out,
+    border-color var(--duration-fast) ease-out,
+    color var(--duration-fast) ease-out;
 }
 
 button:hover {
-  background: var(--surface);
-  color: var(--text);
+  background: var(--accent-subtle-fill);
+  color: var(--text-primary);
+}
+
+
+button:active {
+  background: var(--accent-control-fill);
+}
+
+
+button:disabled,
+button[aria-disabled="true"] {
+  color: var(--text-disabled);
+  cursor: default;
+  pointer-events: none;
+}
+
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-stroke);
+  outline-offset: 1px;
+}
+
+.standard-button,
+.accent-button,
+.subtle-button {
+  min-height: 32px;
+  border: 1px solid var(--control-stroke-default);
+  border-radius: var(--control-radius);
+  padding: 0 var(--space-3);
+}
+
+.standard-button {
+  background: var(--control-fill-default);
+  box-shadow: 0 1px 2px rgb(20 20 20 / 5%);
+}
+
+.standard-button:hover {
+  border-color: var(--accent-secondary);
+  background: var(--accent-subtle-fill);
+}
+
+
+.standard-button:active {
+  border-color: var(--accent-secondary);
+  background: var(--accent-control-fill);
+  box-shadow: none;
+}
+
+
+.accent-button {
+  border-color: var(--accent-default);
+  background: var(--accent-default);
+  color: var(--accent-text);
+}
+
+.accent-button:hover {
+  border-color: var(--accent-secondary);
+  background: var(--accent-secondary);
+}
+
+.accent-button:active {
+  border-color: var(--accent-tertiary);
+  background: var(--accent-tertiary);
+}
+
+.subtle-button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.subtle-button:hover {
+  background: var(--accent-subtle-fill);
+  color: var(--text-primary);
+}
+
+.subtle-button:active {
+  background: var(--accent-control-fill);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+@media (forced-colors: active) {
+  body {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .app {
+    background: Canvas;
+    box-shadow: 0 0 0 1px CanvasText;
+  }
+
+  .content,
+  .footer {
+    background: Canvas;
+    border-color: CanvasText;
+    scrollbar-color: ButtonText Canvas;
+  }
+
+  .content::-webkit-scrollbar-track {
+    background: Canvas;
+  }
+
+  .content::-webkit-scrollbar-thumb {
+    border-color: Canvas;
+    background: ButtonText;
+  }
+
+  .content::-webkit-scrollbar-thumb:hover {
+    background: Highlight;
+  }
+
+  .standard-button,
+  .subtle-button {
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .subtle-button {
+    border-color: transparent;
+  }
+
+  .subtle-button:active {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .accent-button {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  button:hover,
+  .standard-button:hover,
+  .subtle-button:hover {
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .accent-button:hover {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  :where(button, input, select, textarea, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }

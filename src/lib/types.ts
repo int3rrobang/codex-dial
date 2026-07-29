@@ -5,6 +5,16 @@ export interface WorkArea {
   height: number;
 }
 
+export interface AccentPalette {
+  accent: string;
+  dark_1: string;
+  dark_2: string;
+  dark_3: string;
+  light_1: string;
+  light_2: string;
+  light_3: string;
+}
+
 export interface UsageWindow {
   remaining_percent: number;
   resets_at: number;
