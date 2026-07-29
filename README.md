@@ -3,7 +3,7 @@
 A small-ish, fast Windows tray utility with a nice graph that tracks your Codex/OpenCode Go rate limits and helps you pace yourself. 
 Ported from [thrr87/codex-limits](https://github.com/thrr87/codex-limits) (macOS) to Windows using Tauri 2, Rust, and Svelte.
 
-![Codex Dial screenshot](docs/screenshot.png)
+![Codex Dial’s Windows 11 flyout interface showing OpenCode Go usage](docs/fluent-flyout.png)
 
 ## What it does
 
