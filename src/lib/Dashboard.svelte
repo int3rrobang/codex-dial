@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { UiState, PaceStatus, Forecast, UsageWindow, UsageSample } from "./types";
   import { refresh, view } from "./store";
+  import FluentIcon from "./FluentIcon.svelte";
   import BurnDownChart from "./BurnDownChart.svelte";
 
 
-  let { data }: { data: UiState } = $props();
+  let { data, onlayoutchange }: { data: UiState; onlayoutchange?: () => void } = $props();
 
   let ocgWindow = $state(1);
   let showOtherLimits = $state(false);
@@ -26,6 +28,53 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") showBankedResets = false;
   }
+  function handleTabNavigation(
+    event: KeyboardEvent,
+    currentIndex: number,
+    count: number,
+    select: (index: number) => void,
+  ) {
+    if (count < 2) return;
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % count;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + count) % count;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = count - 1;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    const tabList = (event.currentTarget as HTMLElement).parentElement;
+    select(nextIndex);
+    requestAnimationFrame(() => {
+      const tabs = tabList?.querySelectorAll<HTMLElement>('[role="tab"]');
+      tabs?.[nextIndex]?.focus();
+    });
+  }
+
+
+  async function selectProvider(provider: "codex" | "opencode") {
+    tab = provider;
+    await tick();
+    onlayoutchange?.();
+  }
+
+  async function toggleOtherLimits() {
+    showOtherLimits = !showOtherLimits;
+    await tick();
+    onlayoutchange?.();
+  }
+
+  async function toggleOtherWindows() {
+    showOtherWindows = !showOtherWindows;
+    await tick();
+    onlayoutchange?.();
+  }
 
 
   $effect(() => {
@@ -43,9 +92,9 @@
 
   function statusColor(status: PaceStatus): string {
     switch (status) {
-      case "slowDown": return "var(--accent-red)";
-      case "onTrack": return "var(--accent-green)";
-      case "roomToUseMore": return "var(--accent-blue)";
+      case "slowDown": return "var(--system-critical)";
+      case "onTrack": return "var(--system-success)";
+      case "roomToUseMore": return "var(--accent-secondary)";
     }
   }
 
@@ -136,18 +185,45 @@
   <div class="empty-state provider-empty">
     <p class="provider-title">No usage provider is enabled</p>
     <p>Enable Codex CLI or OpenCode Go in Settings to start monitoring usage.</p>
-    <button class="retry" onclick={() => view.set("settings")}>Open Settings</button>
+    <button class="accent-button retry" onclick={() => view.set("settings")}>Open Settings</button>
   </div>
 {:else}
 {#if data.codex_enabled && data.opencode_go_enabled}
-  <div class="tabs">
-    <button class="tab" class:active={tab === "codex"} onclick={() => tab = "codex"}>Codex</button>
-    <button class="tab" class:active={tab === "opencode"} onclick={() => tab = "opencode"}>OpenCode Go</button>
+  <div class="tabs selector-group" role="tablist" aria-label="Usage provider">
+    <button
+      class="tab"
+      id="codex-tab"
+      class:active={tab === "codex"}
+      role="tab"
+      aria-selected={tab === "codex"}
+      aria-controls="codex-panel"
+      tabindex={tab === "codex" ? 0 : -1}
+      onclick={() => void selectProvider("codex")}
+      onkeydown={(event) => handleTabNavigation(event, tab === "codex" ? 0 : 1, 2, (next) => void selectProvider(next === 0 ? "codex" : "opencode"))}
+    >Codex</button>
+    <button
+      class="tab"
+      id="opencode-tab"
+      class:active={tab === "opencode"}
+      role="tab"
+      aria-selected={tab === "opencode"}
+      aria-controls="opencode-panel"
+      tabindex={tab === "opencode" ? 0 : -1}
+      onclick={() => void selectProvider("opencode")}
+      onkeydown={(event) => handleTabNavigation(event, tab === "codex" ? 0 : 1, 2, (next) => void selectProvider(next === 0 ? "codex" : "opencode"))}
+    >OpenCode Go</button>
   </div>
 {/if}
 
 <div class="tab-panels">
-  <div class="tab-panel" class:inactive={tab !== "codex"} aria-hidden={tab !== "codex"}>
+  <div
+    id="codex-panel"
+    class="tab-panel"
+    class:inactive={tab !== "codex"}
+    role="tabpanel"
+    aria-labelledby="codex-tab"
+    aria-hidden={tab !== "codex"}
+  >
   {#if data.snapshot && data.forecast}
     {@const snapshot = data.snapshot}
     {@const forecast = data.forecast}
@@ -156,16 +232,16 @@
         <span class="remaining">{Math.round(snapshot.main_limit.window.remaining_percent)}%</span>
         <span class="remaining-label">remaining</span>
         <span class="spacer"></span>
-        <button onclick={() => refresh()} title="Refresh">
+        <button class="icon-button refresh-button" onclick={() => refresh()} aria-label="Refresh Codex usage">
           {#if data.is_refreshing}
-            <span class="spinner"></span>
+            <span class="spinner" aria-hidden="true"></span>
           {:else}
-            &#x21bb;
+            <FluentIcon name="refresh" size={15} />
           {/if}
         </button>
       </div>
 
-      <div class="status-section">
+      <div class="status-section" role="status" aria-live="polite">
         <div class="status-title" style="color: {statusColor(forecast.status)}">
           {statusTitle(forecast.status)}
         </div>
@@ -201,7 +277,7 @@
             <span class="stat-label">Banked resets</span>
             {#if snapshot.banked_reset_count > 0}
               <button
-                class="banked-reset-trigger"
+                class="subtle-button banked-reset-trigger"
                 aria-expanded={showBankedResets}
                 aria-controls="banked-reset-details"
                 aria-label={`${snapshot.banked_reset_count} banked reset${snapshot.banked_reset_count === 1 ? "" : "s"}${snapshot.banked_reset_credits[0] ? `; next expires ${formatResetDeadline(snapshot.banked_reset_credits[0].expires_at)}` : ""}`}
@@ -211,7 +287,7 @@
                 {#if snapshot.banked_reset_credits.length > 0}
                   <span class="banked-next-deadline">Next {formatResetTime(snapshot.banked_reset_credits[0].expires_at)}</span>
                 {/if}
-                <span class="chevron" class:open={showBankedResets}>&#9656;</span>
+                <span class="chevron" class:open={showBankedResets}><FluentIcon name="chevron-right" size={12} /></span>
               </button>
             {:else}
               <span class="stat-value">0</span>
@@ -258,43 +334,59 @@
       </div>
 
       {#if snapshot.other_limits.length > 0}
-        <hr />
         <div class="other-limits">
-          <button class="section-toggle" onclick={() => showOtherLimits = !showOtherLimits}>
+          <button
+            class="subtle-button section-toggle"
+            aria-expanded={showOtherLimits}
+            aria-controls="codex-other-limits"
+            onclick={toggleOtherLimits}
+          >
             <span class="section-label">Other limits ({snapshot.other_limits.length})</span>
-            <span class="chevron" class:open={showOtherLimits}>&#9656;</span>
+            <span class="chevron" class:open={showOtherLimits}><FluentIcon name="chevron-right" size={12} /></span>
           </button>
           {#if showOtherLimits}
-            {#each snapshot.other_limits as limit}
-              <div class="limit-row">
-                <span class="limit-name">{limit.name}</span>
-                <span class="limit-pct">{Math.round(limit.window.remaining_percent)}%</span>
-                <span class="limit-reset">{formatResetTime(limit.window.resets_at)}</span>
-              </div>
-            {/each}
+            <div id="codex-other-limits" class="limit-list">
+              {#each snapshot.other_limits as limit}
+                <div class="limit-row">
+                  <span class="limit-name">{limit.name}</span>
+                  <span class="limit-pct">{Math.round(limit.window.remaining_percent)}%</span>
+                  <span class="limit-reset">{formatResetTime(limit.window.resets_at)}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
         </div>
       {/if}
 
       {#if data.error_message}
-        <div class="error">&#9888; {data.error_message}</div>
+        <div class="error" role="alert">
+          <FluentIcon name="warning" size={14} />
+          <span>{data.error_message}</span>
+        </div>
       {/if}
 
     </div>
   {:else}
     <div class="empty-state">
       {#if data.is_refreshing}
-        <span class="spinner large"></span>
+        <span class="spinner large" aria-hidden="true"></span>
         <p>Reading Codex usage...</p>
       {:else}
-        <p>&#9888;</p>
+        <FluentIcon name="warning" size={20} />
         <p>{data.error_message ?? "Codex usage is not available."}</p>
-        <button class="retry" onclick={() => refresh()}>Try Again</button>
+        <button class="accent-button retry" onclick={() => refresh()}>Try Again</button>
       {/if}
     </div>
   {/if}
   </div>
-  <div class="tab-panel" class:inactive={tab !== "opencode"} aria-hidden={tab !== "opencode"}>
+  <div
+    id="opencode-panel"
+    class="tab-panel"
+    class:inactive={tab !== "opencode"}
+    role="tabpanel"
+    aria-labelledby="opencode-tab"
+    aria-hidden={tab !== "opencode"}
+  >
   {#if data.opencode_go && data.opencode_go_forecasts.length > 0}
     {@const ocg = data.opencode_go}
     {@const idx = Math.min(ocgWindow, ocg.windows.length - 1)}
@@ -305,22 +397,31 @@
       <div class="header">
         <span class="remaining">{Math.round(selected.remaining_percent)}%</span>
         <span class="remaining-label">remaining</span>
-        <span class="window-tabs">
+        <div class="window-tabs" role="tablist" aria-label="OpenCode Go usage window">
           {#each ocg.windows as w, i}
-            <button class="window-tab" class:active={i === idx} onclick={() => ocgWindow = i}>{w.name}</button>
+            <button
+              class="window-tab"
+              class:active={i === idx}
+              role="tab"
+              aria-selected={i === idx}
+              aria-label={`${w.name} window`}
+              tabindex={i === idx ? 0 : -1}
+              onclick={() => ocgWindow = i}
+              onkeydown={(event) => handleTabNavigation(event, i, ocg.windows.length, (next) => ocgWindow = next)}
+            >{w.name}</button>
           {/each}
-        </span>
+        </div>
         <span class="spacer"></span>
-        <button onclick={() => refresh()} title="Refresh">
+        <button class="icon-button refresh-button" onclick={() => refresh()} aria-label="Refresh OpenCode Go usage">
           {#if data.is_refreshing}
-            <span class="spinner"></span>
+            <span class="spinner" aria-hidden="true"></span>
           {:else}
-            &#x21bb;
+            <FluentIcon name="refresh" size={15} />
           {/if}
         </button>
       </div>
 
-      <div class="status-section">
+      <div class="status-section" role="status" aria-live="polite">
         <div class="status-title" style="color: {statusColor(forecast.status)}">
           {statusTitle(forecast.status)}
         </div>
@@ -370,38 +471,47 @@
       </div>
 
       {#if ocg.windows.length > 1}
-        <hr />
         <div class="other-limits">
-          <button class="section-toggle" onclick={() => showOtherWindows = !showOtherWindows}>
+          <button
+            class="subtle-button section-toggle"
+            aria-expanded={showOtherWindows}
+            aria-controls="opencode-other-windows"
+            onclick={toggleOtherWindows}
+          >
             <span class="section-label">Other windows ({ocg.windows.length - 1})</span>
-            <span class="chevron" class:open={showOtherWindows}>&#9656;</span>
+            <span class="chevron" class:open={showOtherWindows}><FluentIcon name="chevron-right" size={12} /></span>
           </button>
           {#if showOtherWindows}
-            {#each ocg.windows.filter((_, i) => i !== idx) as w}
-              <div class="limit-row">
-                <span class="limit-name">{w.name}</span>
-                <span class="limit-pct">{Math.round(w.remaining_percent)}%</span>
-                <span class="limit-reset">{relativeTime(w.resets_at)}</span>
-              </div>
-            {/each}
+            <div id="opencode-other-windows" class="limit-list">
+              {#each ocg.windows.filter((_, i) => i !== idx) as w}
+                <div class="limit-row">
+                  <span class="limit-name">{w.name}</span>
+                  <span class="limit-pct">{Math.round(w.remaining_percent)}%</span>
+                  <span class="limit-reset">{relativeTime(w.resets_at)}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
         </div>
       {/if}
 
       {#if data.opencode_go_error}
-        <div class="error">&#9888; {data.opencode_go_error}</div>
+        <div class="error" role="alert">
+          <FluentIcon name="warning" size={14} />
+          <span>{data.opencode_go_error}</span>
+        </div>
       {/if}
 
     </div>
   {:else}
     <div class="empty-state">
       {#if data.is_refreshing}
-        <span class="spinner large"></span>
+        <span class="spinner large" aria-hidden="true"></span>
         <p>Reading OpenCode Go usage...</p>
       {:else}
-        <p>&#9888;</p>
+        <FluentIcon name="warning" size={20} />
         <p>{data.opencode_go_error ?? "OpenCode Go usage is not available."}</p>
-        <button class="retry" onclick={() => refresh()}>Try Again</button>
+        <button class="accent-button retry" onclick={() => refresh()}>Try Again</button>
       {/if}
     </div>
   {/if}
@@ -410,61 +520,240 @@
 {/if}
 
 <style>
-  .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
-  .tab-panels { display: grid; }
+  .selector-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 2px;
+    border-radius: var(--control-radius);
+    background: color-mix(in srgb, var(--flyout-card-background, var(--control-fill-secondary)) 76%, transparent);
+    margin-inline-end: var(--space-1);
+  }
+  .tabs { margin-bottom: 10px; }
+  .tab-panels {
+    display: grid;
+    padding: 0 var(--space-1) var(--space-3);
+  }
   .tab-panel { grid-area: 1 / 1; min-width: 0; }
   .tab-panel.inactive { visibility: hidden; pointer-events: none; }
-  .tab { padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; background: none; color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; }
-  .tab.active { background: var(--surface); color: var(--text-primary); border-color: var(--accent-blue); }
-  .window-tabs { display: flex; gap: 2px; flex-wrap: nowrap; white-space: nowrap; }
-  .window-tab { padding: 2px 7px; border-radius: 4px; font-size: 10px; background: none; color: var(--text-secondary); border: 1px solid transparent; cursor: pointer; white-space: nowrap; }
-  .window-tab.active { color: var(--text-primary); border-color: var(--border); background: var(--surface); }
-  .dashboard { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
-  .header { display: flex; align-items: baseline; gap: 6px; flex-wrap: nowrap; }
-  .remaining { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tab {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 30px;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: calc(var(--control-radius) - 1px);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--duration-fast) ease-out, color var(--duration-fast) ease-out;
+  }
+  .tab:hover,
+  .window-tab:hover {
+    background: color-mix(in srgb, var(--accent-default) 8%, transparent);
+    color: var(--text-primary);
+  }
+  .tab.active,
+  .window-tab.active {
+    background: color-mix(in srgb, var(--accent-default) 14%, transparent);
+    color: var(--accent-secondary);
+  }
+  .tab.active::after,
+  .window-tab.active::after {
+    position: absolute;
+    right: 8px;
+    bottom: 2px;
+    left: 8px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent-default);
+    content: "";
+  }
+  .window-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    width: max-content;
+    justify-self: start;
+  }
+  .window-tabs::-webkit-scrollbar { display: none; }
+  .window-tab {
+    position: relative;
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--duration-fast) ease-out, color var(--duration-fast) ease-out;
+  }
+  .dashboard { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+  .header {
+    display: grid;
+    grid-template-columns: max-content max-content minmax(0, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 6px;
+    width: 100%;
+    height: 36px;
+    min-height: 36px;
+  }
+  .remaining { font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
   .remaining-label { color: var(--text-secondary); white-space: nowrap; }
-  .spacer { flex: 1; }
-  .status-section { display: flex; flex-direction: column; gap: 4px; }
+  .spacer { grid-column: 4; min-width: 0; }
+  .refresh-button { grid-column: 5; justify-self: end; }
+  .status-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    height: 64px;
+    min-height: 64px;
+  }
   .status-title { font-weight: 600; font-size: 14px; }
-  .status-message { color: var(--text-secondary); }
-  .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); grid-auto-flow: column; column-gap: 24px; row-gap: 8px; }
+  .status-message { color: var(--text-secondary); font-size: 14px; line-height: 1.35; }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, calc(var(--space-4) * 2 + var(--space-1)));
+    grid-auto-flow: column;
+    column-gap: 20px;
+    row-gap: 8px;
+  }
   .stats-col { display: contents; }
-  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-item { display: flex; flex-direction: column; gap: 0; min-width: 0; min-height: 0; height: 100%; }
   .banked-reset-stat { position: relative; }
-  .banked-reset-trigger { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; color: var(--text-primary); text-align: left; }
-  .banked-reset-trigger:hover { background: none; }
-  .banked-next-deadline { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-  .reset-popover { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; width: min(300px, calc(100vw - 32px)); max-height: 240px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+  .banked-reset-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: calc(var(--space-4) + var(--space-1));
+    padding: 0 4px;
+    border-radius: var(--control-radius);
+    color: var(--text-primary);
+    text-align: left;
+  }
+  .banked-reset-trigger:hover { background: var(--control-fill-secondary); }
+  .banked-next-deadline {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reset-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 20;
+    width: min(300px, calc(100vw - 32px));
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--card-stroke) 65%, transparent);
+    border-radius: var(--overlay-radius);
+    background: var(--flyout-card-background, var(--solid-background-secondary));
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--solid-background-base) 38%, transparent);
+  }
   .reset-popover-title { margin-bottom: 8px; color: var(--text-primary); font-size: 12px; font-weight: 600; }
   .reset-list { display: flex; flex-direction: column; gap: 9px; }
-  .reset-credit { padding-bottom: 9px; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .reset-credit { padding-bottom: 9px; border-bottom: 1px solid var(--control-stroke-default); font-size: 11px; }
   .reset-credit:last-child { padding-bottom: 0; border-bottom: none; }
   .reset-credit-title { color: var(--text-primary); font-weight: 600; }
   .reset-credit-deadline { margin-top: 2px; color: var(--text-secondary); }
-  .reset-credit-relative { color: var(--accent-blue); font-variant-numeric: tabular-nums; }
+  .reset-credit-relative { color: var(--accent-secondary); font-variant-numeric: tabular-nums; }
   .reset-credit-description { margin-top: 2px; color: var(--text-secondary); }
   .reset-note { color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
-
-  .stat-label { font-size: 11px; color: var(--text-secondary); }
-  .stat-value { font-size: 13px; font-variant-numeric: tabular-nums; }
-  hr { border: none; border-top: 1px solid var(--border); }
-  .section-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
-  .section-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; padding: 0; width: 100%; }
-  .section-toggle .section-label { margin-bottom: 0; }
-  .chevron { font-size: 9px; color: var(--text-secondary); transition: transform 0.15s; }
+  .stat-label { font-size: 11px; line-height: var(--space-4); color: var(--text-secondary); }
+  .stat-value { font-size: 13px; line-height: var(--space-4); font-variant-numeric: tabular-nums; }
+  .section-label { font-size: 11px; color: var(--text-secondary); }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 2px 4px;
+    border-radius: var(--control-radius);
+    text-align: left;
+  }
+  .section-toggle:hover { background: var(--control-fill-secondary); }
+  .limit-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    transition: transform var(--duration-fast) ease-out;
+  }
   .chevron.open { transform: rotate(90deg); }
-  .limit-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
+  .limit-row { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; }
   .limit-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .limit-pct { font-variant-numeric: tabular-nums; }
   .limit-reset { color: var(--text-secondary); }
-  .error { font-size: 12px; color: var(--text-secondary); }
-  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 200px; color: var(--text-secondary); text-align: center; }
+  .error {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 7px 8px;
+    border-radius: var(--control-radius);
+    background: var(--system-background-critical);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--system-critical) 55%, transparent);
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 200px;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .empty-state p { font-size: 14px; }
   .provider-title { color: var(--text-primary); font-weight: 600; }
-  .retry { background: var(--surface); padding: 6px 16px; border-radius: 6px; }
-  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .retry { padding: 6px 14px; }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--control-strong-stroke-default);
+    border-top-color: var(--accent-default);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
   .spinner.large { width: 24px; height: 24px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  :global(.app.compact .tabs) { margin-bottom: 8px; }
-  :global(.app.compact .dashboard) { gap: 10px; }
+  :global(.app.compact .tabs) { margin-bottom: 6px; }
+  :global(.app.compact .dashboard) { gap: 9px; }
+  :global(.app.compact .status-section) { height: 56px; min-height: 56px; }
   :global(.app.compact .stats-col) { gap: 5px; }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; }
+    .tab, .window-tab, .chevron { transition: none; }
+  }
+  @media (forced-colors: active) {
+    .selector-group { background: Canvas; }
+    .tab:hover,
+    .window-tab:hover { background: ButtonFace; color: ButtonText; }
+    .tab.active,
+    .window-tab.active { background: Highlight; color: HighlightText; }
+    .tab.active::after,
+    .window-tab.active::after { background: HighlightText; }
+  }
 </style>

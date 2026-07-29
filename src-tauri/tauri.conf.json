@@ -17,18 +17,15 @@
         "title": "Codex Dial",
         "width": 380,
         "height": 480,
-        "minWidth": 320,
-        "minHeight": 380,
-        "maxWidth": 600,
-        "maxHeight": 900,
-        "resizable": true,
+        "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
         "focus": true,
-        "shadow": false,
-        "backgroundColor": "#1e1e2e"
+        "shadow": true,
+        "transparent": true,
+        "backgroundColor": "#00000000"
       }
     ],
     "security": {

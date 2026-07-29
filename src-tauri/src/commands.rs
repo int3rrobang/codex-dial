@@ -12,6 +12,52 @@ pub struct WorkArea {
     pub height: i32,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AccentPalette {
+    pub accent: String,
+    pub dark_1: String,
+    pub dark_2: String,
+    pub dark_3: String,
+    pub light_1: String,
+    pub light_2: String,
+    pub light_3: String,
+}
+
+#[cfg(target_os = "windows")]
+fn color_to_css(color: windows::UI::Color) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.R, color.G, color.B)
+}
+
+#[tauri::command]
+pub fn get_accent_palette() -> Result<AccentPalette, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::UI::ViewManagement::{UIColorType, UISettings};
+
+        let settings =
+            UISettings::new().map_err(|_| "Could not access Windows color settings.".to_string())?;
+        let color = |kind| {
+            settings
+                .GetColorValue(kind)
+                .map(color_to_css)
+                .map_err(|_| "Could not read the Windows accent palette.".to_string())
+        };
+
+        return Ok(AccentPalette {
+            accent: color(UIColorType::Accent)?,
+            dark_1: color(UIColorType::AccentDark1)?,
+            dark_2: color(UIColorType::AccentDark2)?,
+            dark_3: color(UIColorType::AccentDark3)?,
+            light_1: color(UIColorType::AccentLight1)?,
+            light_2: color(UIColorType::AccentLight2)?,
+            light_3: color(UIColorType::AccentLight3)?,
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    Err("Accent palette detection is only supported on Windows.".to_string())
+}
+
 #[tauri::command]
 pub fn get_work_area() -> Result<WorkArea, String> {
     #[cfg(target_os = "windows")]
@@ -73,6 +119,61 @@ pub fn get_work_area() -> Result<WorkArea, String> {
     #[cfg(not(target_os = "windows"))]
     Err("Work area detection is only supported on Windows.".to_string())
 }
+
+#[tauri::command]
+pub fn set_flyout_bounds(
+    window: tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    if width <= 0 || height <= 0 {
+        return Err("Flyout width and height must be positive.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+        };
+
+        let hwnd = window
+            .hwnd()
+            .map_err(|_| "Could not access the flyout window handle.".to_string())?;
+        if hwnd.0.is_null() {
+            return Err("Could not access the flyout window handle.".to_string());
+        }
+
+        let moved = unsafe {
+            SetWindowPos(
+                hwnd.0,
+                std::ptr::null_mut(),
+                x,
+                y,
+                width,
+                height,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+        };
+        if moved == 0 {
+            return Err("Could not set the flyout window bounds.".to_string());
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_size(tauri::PhysicalSize::new(width as u32, height as u32))
+            .map_err(|_| "Could not set the flyout window size.".to_string())?;
+        window
+            .set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(|_| "Could not set the flyout window position.".to_string())?;
+        Ok(())
+    }
+}
+
 
 #[tauri::command]
 pub async fn get_state(monitor: State<'_, MonitorState>) -> Result<UiState, String> {
