@@ -8,6 +8,7 @@
     setOpenCodeGoEnabled,
     setOpenCodeWorkspaceId,
     setSafetyBuffer,
+    setResetNotificationsEnabled,
     stopSync,
     view,
   } from "./store";
@@ -90,6 +91,19 @@
         label="Launch at login"
         showLabel={false}
         onchange={(event) => setLaunchAtLogin(inputChecked(event))}
+      />
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-copy">
+        <span class="setting-label">Banked reset notifications</span>
+        <p class="setting-description">Notify me when the next banked reset expires in under 12 hours and again under 6 hours.</p>
+      </div>
+      <ToggleSwitch
+        checked={data.reset_notifications_enabled}
+        label="Banked reset notifications"
+        showLabel={false}
+        onchange={(event) => setResetNotificationsEnabled(inputChecked(event))}
       />
     </div>
   </section>

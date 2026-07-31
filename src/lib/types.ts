@@ -85,6 +85,7 @@ export interface UiState {
   opencode_go_forecasts: Forecast[];
   opencode_go_samples: UsageSample[];
   opencode_go_enabled: boolean;
+  reset_notifications_enabled: boolean;
 }
 
 export interface OpenCodeGoWindow {

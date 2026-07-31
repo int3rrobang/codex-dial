@@ -110,6 +110,7 @@ fn is_flyout_foreground<R: Runtime>(_window: &tauri::WebviewWindow<R>) -> bool {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .manage(FlyoutBehavior::default())
         .manage(MonitorState::new(Monitor::new()))
@@ -126,6 +127,7 @@ fn main() {
             commands::stop_sync,
             commands::set_opencode_cookie,
             commands::set_opencode_workspace_id,
+            commands::set_reset_notifications_enabled,
             commands::set_opencode_go_enabled,
         ])
         .setup(|app| {
@@ -276,9 +278,10 @@ fn main() {
 
 async fn refresh_and_notify(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<MonitorState>();
-    {
+    let notifications = {
         let mut monitor = state.lock().await;
-        monitor.refresh().await;
-    }
+        monitor.refresh().await
+    };
+    commands::notify_reset_notifications(app_handle, notifications);
     let _ = app_handle.emit("state-updated", ());
 }

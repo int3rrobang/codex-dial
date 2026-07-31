@@ -101,4 +101,5 @@ pub struct UiState {
     pub opencode_go_forecasts: Vec<Forecast>,
     pub opencode_go_samples: Vec<UsageSample>,
     pub opencode_go_enabled: bool,
+    pub reset_notifications_enabled: bool,
 }

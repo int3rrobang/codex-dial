@@ -5,6 +5,22 @@ use crate::opencode_client;
 use crate::usage_history::UsageHistory;
 use std::path::PathBuf;
 
+const RESET_NOTIFICATION_12_HOURS: i64 = 12 * 60 * 60;
+const RESET_NOTIFICATION_6_HOURS: i64 = 6 * 60 * 60;
+const RESET_NOTIFICATION_12_MASK: u8 = 1;
+const RESET_NOTIFICATION_6_MASK: u8 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResetNotification {
+    pub threshold_hours: u8,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct ResetNotificationState {
+    expires_at: i64,
+    sent_mask: u8,
+}
+
 pub struct Monitor {
     pub snapshot: Option<UsageSnapshot>,
     pub forecast: Option<Forecast>,
@@ -16,6 +32,7 @@ pub struct Monitor {
     pub safety_buffer: f64,
     pub launch_at_login: bool,
     pub codex_enabled: bool,
+    pub reset_notifications_enabled: bool,
     pub opencode_go: Option<OpenCodeGoSnapshot>,
     pub opencode_go_error: Option<String>,
     pub opencode_go_forecasts: Vec<Forecast>,
@@ -27,6 +44,7 @@ pub struct Monitor {
     previous_status: Option<PaceStatus>,
     history: UsageHistory,
     config_path: PathBuf,
+    reset_notification_state: Option<ResetNotificationState>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -39,6 +57,8 @@ struct PersistedConfig {
     opencode_cookie: Option<String>,
     opencode_workspace_id: Option<String>,
     opencode_go_enabled: Option<bool>,
+    reset_notifications_enabled: Option<bool>,
+    reset_notification_state: Option<ResetNotificationState>,
 }
 
 impl Monitor {
@@ -73,6 +93,7 @@ impl Monitor {
             sync_error_message: state.error_message,
             safety_buffer: config.safety_buffer.unwrap_or(3.0),
             launch_at_login: config.launch_at_login.unwrap_or(true),
+            reset_notifications_enabled: config.reset_notifications_enabled.unwrap_or(true),
             codex_enabled,
             opencode_go: None,
             opencode_go_error: None,
@@ -85,6 +106,7 @@ impl Monitor {
             previous_status: config.previous_status,
             history,
             config_path,
+            reset_notification_state: config.reset_notification_state,
         };
 
         if let Some(sync_path) = config.sync_folder {
@@ -100,11 +122,12 @@ impl Monitor {
         monitor
     }
 
-    pub async fn refresh(&mut self) {
+    pub async fn refresh(&mut self) -> Vec<ResetNotification> {
         if self.is_refreshing {
-            return;
+            return Vec::new();
         }
         self.is_refreshing = true;
+        let mut notifications = Vec::new();
 
         let sync_state = self.history.synchronize();
         self.samples = sync_state.samples;
@@ -186,6 +209,7 @@ impl Monitor {
                         self.sync_error_message = None;
                     }
 
+                    notifications.extend(self.collect_reset_notifications(&snapshot));
                     self.snapshot = Some(snapshot);
                     self.error_message = None;
                     self.recalculate();
@@ -228,6 +252,36 @@ impl Monitor {
         }
 
         self.is_refreshing = false;
+        notifications
+    }
+
+    fn collect_reset_notifications(&mut self, snapshot: &UsageSnapshot) -> Vec<ResetNotification> {
+        let next_expiry = snapshot
+            .banked_reset_credits
+            .iter()
+            .map(|credit| credit.expires_at)
+            .min();
+        let Some(expires_at) = next_expiry else {
+            self.reset_notification_state = None;
+            return Vec::new();
+        };
+
+        if self
+            .reset_notification_state
+            .is_none_or(|state| state.expires_at != expires_at)
+        {
+            self.reset_notification_state = Some(ResetNotificationState {
+                expires_at,
+                sent_mask: 0,
+            });
+        }
+
+        pending_reset_notifications(
+            self.reset_notifications_enabled,
+            expires_at,
+            snapshot.fetched_at,
+            &mut self.reset_notification_state,
+        )
     }
 
     pub fn recalculate(&mut self) {
@@ -300,6 +354,11 @@ impl Monitor {
         self.persist_config();
     }
 
+    pub fn set_reset_notifications_enabled(&mut self, enabled: bool) {
+        self.reset_notifications_enabled = enabled;
+        self.update_config(|c| c.reset_notifications_enabled = Some(enabled));
+    }
+
     pub fn connect_sync_folder(&mut self, path: PathBuf) {
         let state = self.history.connect(path.clone());
         self.samples = state.samples;
@@ -370,6 +429,7 @@ impl Monitor {
             opencode_go_forecasts: self.opencode_go_forecasts.clone(),
             opencode_go_samples: self.opencode_go_samples.clone(),
             opencode_go_enabled: self.opencode_go_enabled,
+            reset_notifications_enabled: self.reset_notifications_enabled,
         }
     }
 
@@ -378,6 +438,8 @@ impl Monitor {
             c.safety_buffer = Some(self.safety_buffer);
             c.launch_at_login = Some(self.launch_at_login);
             c.previous_status = self.previous_status;
+            c.reset_notifications_enabled = Some(self.reset_notifications_enabled);
+            c.reset_notification_state = self.reset_notification_state;
         });
     }
 
@@ -389,13 +451,56 @@ impl Monitor {
         }
     }
 }
+
+fn pending_reset_notifications(
+    enabled: bool,
+    expires_at: i64,
+    now: i64,
+    state: &mut Option<ResetNotificationState>,
+) -> Vec<ResetNotification> {
+    if !enabled {
+        return Vec::new();
+    }
+
+    let remaining = expires_at - now;
+    if remaining <= 0 {
+        return Vec::new();
+    }
+
+    let notification_state = state.get_or_insert(ResetNotificationState {
+        expires_at,
+        sent_mask: 0,
+    });
+    if notification_state.expires_at != expires_at {
+        notification_state.expires_at = expires_at;
+        notification_state.sent_mask = 0;
+    }
+
+    if remaining < RESET_NOTIFICATION_6_HOURS
+        && notification_state.sent_mask & RESET_NOTIFICATION_6_MASK == 0
+    {
+        notification_state.sent_mask |= RESET_NOTIFICATION_12_MASK | RESET_NOTIFICATION_6_MASK;
+        return vec![ResetNotification { threshold_hours: 6 }];
+    }
+
+    if remaining < RESET_NOTIFICATION_12_HOURS
+        && notification_state.sent_mask & RESET_NOTIFICATION_12_MASK == 0
+    {
+        notification_state.sent_mask |= RESET_NOTIFICATION_12_MASK;
+        return vec![ResetNotification {
+            threshold_hours: 12,
+        }];
+    }
+
+    Vec::new()
+}
 fn default_codex_enabled(config_exists: bool, configured: Option<bool>) -> bool {
     configured.unwrap_or(config_exists)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::default_codex_enabled;
+    use super::{default_codex_enabled, pending_reset_notifications, ResetNotificationState};
 
     #[test]
     fn new_install_starts_without_codex_provider() {
@@ -407,6 +512,61 @@ mod tests {
         assert!(default_codex_enabled(true, None));
         assert!(default_codex_enabled(false, Some(true)));
         assert!(!default_codex_enabled(true, Some(false)));
+    }
+
+    #[test]
+    fn sends_reset_notifications_once_at_each_threshold() {
+        let expiry = 1_000_000;
+        let mut state = None;
+
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 12 * 60 * 60, &mut state),
+            Vec::new()
+        );
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 11 * 60 * 60, &mut state),
+            vec![super::ResetNotification {
+                threshold_hours: 12
+            }]
+        );
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 5 * 60 * 60, &mut state),
+            vec![super::ResetNotification { threshold_hours: 6 }]
+        );
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 60, &mut state),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn first_refresh_under_six_hours_sends_only_urgent_notification() {
+        let expiry = 1_000_000;
+        let mut state = Some(ResetNotificationState {
+            expires_at: expiry,
+            sent_mask: 0,
+        });
+
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 5 * 60 * 60, &mut state),
+            vec![super::ResetNotification { threshold_hours: 6 }]
+        );
+        assert_eq!(
+            pending_reset_notifications(true, expiry, expiry - 11 * 60 * 60, &mut state),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn disabled_notifications_do_not_mark_thresholds_sent() {
+        let expiry = 1_000_000;
+        let mut state = None;
+
+        assert_eq!(
+            pending_reset_notifications(false, expiry, expiry - 5 * 60 * 60, &mut state),
+            Vec::new()
+        );
+        assert!(state.is_none());
     }
 }
 

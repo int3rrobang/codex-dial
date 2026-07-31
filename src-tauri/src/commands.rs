@@ -1,8 +1,8 @@
 use crate::models::UiState;
-use crate::monitor::MonitorState;
+use crate::monitor::{MonitorState, ResetNotification};
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Serialize)]
 pub struct WorkArea {
@@ -34,8 +34,8 @@ pub fn get_accent_palette() -> Result<AccentPalette, String> {
     {
         use windows::UI::ViewManagement::{UIColorType, UISettings};
 
-        let settings =
-            UISettings::new().map_err(|_| "Could not access Windows color settings.".to_string())?;
+        let settings = UISettings::new()
+            .map_err(|_| "Could not access Windows color settings.".to_string())?;
         let color = |kind| {
             settings
                 .GetColorValue(kind)
@@ -174,7 +174,6 @@ pub fn set_flyout_bounds(
     }
 }
 
-
 #[tauri::command]
 pub async fn get_state(monitor: State<'_, MonitorState>) -> Result<UiState, String> {
     let m = monitor.lock().await;
@@ -182,10 +181,47 @@ pub async fn get_state(monitor: State<'_, MonitorState>) -> Result<UiState, Stri
 }
 
 #[tauri::command]
-pub async fn refresh(monitor: State<'_, MonitorState>) -> Result<UiState, String> {
-    let mut m = monitor.lock().await;
-    m.refresh().await;
-    Ok(m.ui_state())
+pub async fn refresh(app: AppHandle, monitor: State<'_, MonitorState>) -> Result<UiState, String> {
+    let (state, notifications) = {
+        let mut m = monitor.lock().await;
+        let notifications = m.refresh().await;
+        (m.ui_state(), notifications)
+    };
+    notify_reset_notifications(&app, notifications);
+    Ok(state)
+}
+
+pub fn notify_reset_notifications<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    notifications: Vec<ResetNotification>,
+) {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+
+    let permission_granted = match app.notification().permission_state() {
+        Ok(PermissionState::Granted) => true,
+        Ok(PermissionState::Prompt | PermissionState::PromptWithRationale) => {
+            matches!(
+                app.notification().request_permission(),
+                Ok(PermissionState::Granted)
+            )
+        }
+        Ok(PermissionState::Denied) => false,
+        Err(_) => true,
+    };
+    if !permission_granted {
+        return;
+    }
+
+    for notification in notifications {
+        let hours = notification.threshold_hours;
+        let body = format!("Your next banked reset expires in less than {hours} hours.");
+        let _ = app
+            .notification()
+            .builder()
+            .title("Banked reset expiring soon")
+            .body(body)
+            .show();
+    }
 }
 
 #[tauri::command]
@@ -205,6 +241,16 @@ pub async fn set_launch_at_login(
 ) -> Result<UiState, String> {
     let mut m = monitor.lock().await;
     m.set_launch_at_login(enabled);
+    Ok(m.ui_state())
+}
+
+#[tauri::command]
+pub async fn set_reset_notifications_enabled(
+    monitor: State<'_, MonitorState>,
+    enabled: bool,
+) -> Result<UiState, String> {
+    let mut m = monitor.lock().await;
+    m.set_reset_notifications_enabled(enabled);
     Ok(m.ui_state())
 }
 

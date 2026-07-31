@@ -18,6 +18,7 @@ export const uiState = writable<UiState>({
   opencode_go_forecasts: [],
   opencode_go_samples: [],
   opencode_go_enabled: false,
+  reset_notifications_enabled: true,
 });
 
 export const view = writable<"dashboard" | "settings">("dashboard");
@@ -52,6 +53,11 @@ export async function setSafetyBuffer(value: number) {
 
 export async function setLaunchAtLogin(enabled: boolean) {
   const state = await invoke<UiState>("set_launch_at_login", { enabled });
+  uiState.set(state);
+}
+
+export async function setResetNotificationsEnabled(enabled: boolean) {
+  const state = await invoke<UiState>("set_reset_notifications_enabled", { enabled });
   uiState.set(state);
 }
 

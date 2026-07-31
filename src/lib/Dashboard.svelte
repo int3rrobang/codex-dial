@@ -14,6 +14,12 @@
   let showOtherWindows = $state(false);
   let showBankedResets = $state(false);
   let bankedResetStat = $state<HTMLDivElement>();
+  let now = $state(Date.now());
+
+  $effect(() => {
+    const interval = window.setInterval(() => { now = Date.now(); }, 60000);
+    return () => window.clearInterval(interval);
+  });
 
   function handleWindowClick(event: MouseEvent) {
     if (
@@ -154,6 +160,11 @@
     return remaining <= 0 ? "expired" : `in ${relativeTime(ts)}`;
   }
 
+  function bankedResetIsImminent(ts: number): boolean {
+    const remaining = ts - now / 1000;
+    return remaining > 0 && remaining < 86400;
+  }
+
 
   function currentWindowSamples() {
     if (!data.snapshot) return [];
@@ -285,7 +296,7 @@
               >
                 <span class="stat-value">{snapshot.banked_reset_count}</span>
                 {#if snapshot.banked_reset_credits.length > 0}
-                  <span class="banked-next-deadline">Next {formatResetTime(snapshot.banked_reset_credits[0].expires_at)}</span>
+                  <span class="banked-next-deadline" class:imminent={bankedResetIsImminent(snapshot.banked_reset_credits[0].expires_at)}>Next {formatResetTime(snapshot.banked_reset_credits[0].expires_at)}</span>
                 {/if}
                 <span class="chevron" class:open={showBankedResets}><FluentIcon name="chevron-right" size={12} /></span>
               </button>
@@ -655,6 +666,15 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .banked-next-deadline.imminent {
+    color: var(--system-critical);
+    text-shadow: 0 0 6px color-mix(in srgb, var(--system-critical) 80%, transparent);
+    animation: banked-reset-glow 1.8s ease-in-out infinite alternate;
+  }
+  @keyframes banked-reset-glow {
+    from { text-shadow: 0 0 3px color-mix(in srgb, var(--system-critical) 55%, transparent); }
+    to { text-shadow: 0 0 8px color-mix(in srgb, var(--system-critical) 90%, transparent); }
+  }
   .reset-popover {
     position: absolute;
     right: 0;
@@ -746,6 +766,10 @@
   @media (prefers-reduced-motion: reduce) {
     .spinner { animation: none; }
     .tab, .window-tab, .chevron { transition: none; }
+    .banked-next-deadline.imminent {
+      animation: none;
+      text-shadow: 0 0 6px color-mix(in srgb, var(--system-critical) 80%, transparent);
+    }
   }
   @media (forced-colors: active) {
     .selector-group { background: Canvas; }
@@ -755,5 +779,9 @@
     .window-tab.active { background: Highlight; color: HighlightText; }
     .tab.active::after,
     .window-tab.active::after { background: HighlightText; }
+    .banked-next-deadline.imminent {
+      color: MarkText;
+      text-shadow: none;
+    }
   }
 </style>
