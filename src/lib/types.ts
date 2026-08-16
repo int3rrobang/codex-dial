@@ -39,6 +39,7 @@ export interface LimitReading {
 }
 
 export interface BankedResetCredit {
+  id: string;
   title: string;
   description: string | null;
   expires_at: number;

@@ -124,9 +124,9 @@ fn main() {
             commands::set_launch_at_login,
             commands::choose_sync_folder,
             commands::set_codex_enabled,
+            commands::apply_codex_reset_credit,
             commands::stop_sync,
-            commands::set_opencode_cookie,
-            commands::set_opencode_workspace_id,
+            commands::set_opencode_api_key,
             commands::set_reset_notifications_enabled,
             commands::set_opencode_go_enabled,
         ])

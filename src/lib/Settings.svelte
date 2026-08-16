@@ -4,11 +4,10 @@
     chooseSyncFolder,
     setCodexEnabled,
     setLaunchAtLogin,
-    setOpenCodeCookie,
+    setOpenCodeApiKey,
     setOpenCodeGoEnabled,
-    setOpenCodeWorkspaceId,
-    setSafetyBuffer,
     setResetNotificationsEnabled,
+    setSafetyBuffer,
     stopSync,
     view,
   } from "./store";
@@ -17,17 +16,33 @@
 
   let { data }: { data: UiState } = $props();
 
-  let cookieInput = $state("");
-  let workspaceInput = $state("");
+  let apiKeyInput = $state("");
+  let isSavingApiKey = $state(false);
   let savedMsg = $state("");
-
-  function showSaved() {
-    savedMsg = "Saved — refreshing...";
-    setTimeout(() => { savedMsg = ""; }, 3000);
-  }
+  let saveError = $state("");
 
   function inputChecked(event: Event): boolean {
     return (event.currentTarget as HTMLInputElement).checked;
+  }
+
+  function clearSaveStatus() {
+    savedMsg = "";
+    saveError = "";
+  }
+
+  async function saveOpenCodeApiKey() {
+    clearSaveStatus();
+    isSavingApiKey = true;
+
+    try {
+      await setOpenCodeApiKey(apiKeyInput.trim() || null);
+      apiKeyInput = "";
+      savedMsg = "Saved.";
+    } catch {
+      saveError = "Could not save the OpenCode API key. Check the key and try again.";
+    } finally {
+      isSavingApiKey = false;
+    }
   }
 </script>
 
@@ -179,48 +194,36 @@
     </div>
 
     {#if data.opencode_go_enabled}
-      <p id="opencode-setup-description" class="setting-description setup-description">Paste your opencode.ai session cookie from browser DevTools (Application → Cookies → auth or __Host-auth value).</p>
+      <p id="opencode-setup-description" class="setting-description setup-description">
+        Create an API key in OpenCode Zen, then enter it here to read your usage windows.
+      </p>
 
       <div class="field-row">
         <div class="field-copy">
-          <label class="setting-label" for="opencode-cookie">Session cookie</label>
-          <span class="field-hint">Not displayed after saving.</span>
+          <label class="setting-label" for="opencode-api-key">OpenCode API key</label>
+          <span id="opencode-api-key-hint" class="field-hint">Not displayed after saving.</span>
         </div>
         <div class="field-control">
           <input
-            id="opencode-cookie"
+            id="opencode-api-key"
             class="fluent-field"
-            type="text"
-            placeholder="Paste token or full cookie (e.g. auth=eyJ...)"
-            aria-describedby="opencode-setup-description"
+            type="password"
+            placeholder="Enter API key"
+            aria-describedby="opencode-setup-description opencode-api-key-hint"
             autocomplete="off"
             spellcheck="false"
-            bind:value={cookieInput}
+            autocapitalize="off"
+            bind:value={apiKeyInput}
+            oninput={clearSaveStatus}
+            disabled={isSavingApiKey}
           />
-          <button class="accent-button save-button" onclick={() => { setOpenCodeCookie(cookieInput.trim() || null); cookieInput = ""; showSaved(); }}>
-            Save
-          </button>
-        </div>
-      </div>
-
-      <div class="field-row">
-        <div class="field-copy">
-          <label class="setting-label" for="opencode-workspace">Workspace ID</label>
-          <span class="field-hint">Optional override for your workspace.</span>
-        </div>
-        <div class="field-control">
-          <input
-            id="opencode-workspace"
-            class="fluent-field"
-            type="text"
-            placeholder="wrk_... (workspace ID override)"
-            aria-describedby="opencode-setup-description"
-            autocomplete="off"
-            spellcheck="false"
-            bind:value={workspaceInput}
-          />
-          <button class="accent-button save-button" onclick={() => { setOpenCodeWorkspaceId(workspaceInput.trim() || null); workspaceInput = ""; showSaved(); }}>
-            Save
+          <button
+            class="accent-button save-button"
+            type="button"
+            onclick={() => void saveOpenCodeApiKey()}
+            disabled={isSavingApiKey}
+          >
+            {isSavingApiKey ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -228,6 +231,12 @@
       {#if savedMsg}
         <div class="info-bar success-bar" role="status" aria-live="polite">
           <span>{savedMsg}</span>
+        </div>
+      {/if}
+      {#if saveError}
+        <div class="info-bar error-bar" role="alert" aria-live="assertive">
+          <FluentIcon name="warning" size={14} />
+          <span>{saveError}</span>
         </div>
       {/if}
       {#if data.opencode_go_error}

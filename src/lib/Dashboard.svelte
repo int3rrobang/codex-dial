@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { UiState, PaceStatus, Forecast, UsageWindow, UsageSample } from "./types";
-  import { refresh, view } from "./store";
+  import { applyCodexResetCredit, refresh, view } from "./store";
   import FluentIcon from "./FluentIcon.svelte";
   import BurnDownChart from "./BurnDownChart.svelte";
 
@@ -14,7 +14,13 @@
   let showOtherWindows = $state(false);
   let showBankedResets = $state(false);
   let bankedResetStat = $state<HTMLDivElement>();
+  let selectedBankedResetId = $state<string | null>(null);
+  let bankedResetIdempotencyKey = $state<string | null>(null);
+  let isApplyingBankedReset = $state(false);
+  let bankedResetError = $state<string | null>(null);
   let now = $state(Date.now());
+
+
 
   $effect(() => {
     const interval = window.setInterval(() => { now = Date.now(); }, 60000);
@@ -33,6 +39,40 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") showBankedResets = false;
+  }
+
+  function selectBankedResetCredit(credit: NonNullable<UiState["snapshot"]>["banked_reset_credits"][number]) {
+    if (isApplyingBankedReset || selectedBankedResetId === credit.id) return;
+    selectedBankedResetId = credit.id;
+    bankedResetIdempotencyKey = crypto.randomUUID();
+    bankedResetError = null;
+  }
+
+  function cancelBankedResetSelection() {
+    if (isApplyingBankedReset) return;
+    selectedBankedResetId = null;
+    bankedResetIdempotencyKey = null;
+    bankedResetError = null;
+  }
+
+  async function applySelectedBankedReset() {
+    const creditId = selectedBankedResetId;
+    const idempotencyKey = bankedResetIdempotencyKey;
+    const credit = data.snapshot?.banked_reset_credits.find((item) => item.id === creditId);
+    if (isApplyingBankedReset || !creditId || !idempotencyKey || !credit) return;
+
+    isApplyingBankedReset = true;
+    bankedResetError = null;
+    try {
+      await applyCodexResetCredit(creditId, idempotencyKey);
+      showBankedResets = false;
+      selectedBankedResetId = null;
+      bankedResetIdempotencyKey = null;
+    } catch {
+      bankedResetError = "We couldn't apply this reset. Try again.";
+    } finally {
+      isApplyingBankedReset = false;
+    }
   }
   function handleTabNavigation(
     event: KeyboardEvent,
@@ -308,22 +348,73 @@
               <div id="banked-reset-details" class="reset-popover" role="dialog" aria-label="Banked reset deadlines">
                 <div class="reset-popover-title">Banked reset deadlines</div>
                 {#if snapshot.banked_reset_credits.length > 0}
+                  {@const selectedCredit = selectedBankedResetId
+                    ? snapshot.banked_reset_credits.find((credit) => credit.id === selectedBankedResetId) ?? null
+                    : null}
                   <div class="reset-list">
                     {#each snapshot.banked_reset_credits as credit}
-                      <div class="reset-credit">
-                        <div class="reset-credit-title">{credit.title}</div>
-                        <div class="reset-credit-deadline">Expires {formatResetDeadline(credit.expires_at)}</div>
-                        <div class="reset-credit-relative">{resetExpiryText(credit.expires_at)}</div>
-                        {#if credit.description}
-                          <div class="reset-credit-description">{credit.description}</div>
-                        {/if}
-                      </div>
+                      {#if credit.id}
+                        <button
+                          type="button"
+                          class="reset-credit"
+                          class:selected={selectedBankedResetId === credit.id}
+                          aria-pressed={selectedBankedResetId === credit.id}
+                          aria-label={`Select ${credit.title}; expires ${formatResetDeadline(credit.expires_at)}`}
+                          disabled={isApplyingBankedReset}
+                          onclick={() => selectBankedResetCredit(credit)}
+                        >
+                          <span class="reset-credit-title">{credit.title}</span>
+                          <span class="reset-credit-deadline">Expires {formatResetDeadline(credit.expires_at)}</span>
+                          <span class="reset-credit-relative">{resetExpiryText(credit.expires_at)}</span>
+                          {#if credit.description}
+                            <span class="reset-credit-description">{credit.description}</span>
+                          {/if}
+                        </button>
+                      {:else}
+                        <div class="reset-credit reset-credit-unavailable">
+                          <div class="reset-credit-title">{credit.title}</div>
+                          <div class="reset-credit-deadline">Expiry details unavailable</div>
+                          <div class="reset-credit-description">Refresh later or update the Codex CLI before applying this reset.</div>
+                        </div>
+                      {/if}
                     {/each}
                   </div>
                   {#if snapshot.banked_reset_credits.length < snapshot.banked_reset_count}
                     <p class="reset-note">
-                      Showing {snapshot.banked_reset_credits.length} of {snapshot.banked_reset_count} deadlines returned by Codex.
+                      Showing {snapshot.banked_reset_credits.length} of {snapshot.banked_reset_count} deadlines returned by Codex. The missing resets cannot be applied here.
                     </p>
+                  {/if}
+                  {#if selectedCredit}
+                    <div class="reset-confirmation" role="group" aria-labelledby="banked-reset-confirmation-title">
+                      <div id="banked-reset-confirmation-title" class="reset-confirmation-title">Apply {selectedCredit.title}?</div>
+                      <div class="reset-confirmation-expiry">Expires {formatResetDeadline(selectedCredit.expires_at)}</div>
+                      <p class="reset-confirmation-warning">Applying this reset consumes one reset and cannot be undone.</p>
+                      {#if bankedResetError}
+                        <div class="reset-confirmation-error" role="alert">{bankedResetError}</div>
+                      {/if}
+                      <div class="reset-confirmation-actions">
+                        <button
+                          type="button"
+                          class="subtle-button"
+                          disabled={isApplyingBankedReset}
+                          onclick={cancelBankedResetSelection}
+                        >Cancel</button>
+                        <button
+                          type="button"
+                          class="accent-button"
+                          disabled={isApplyingBankedReset}
+                          aria-busy={isApplyingBankedReset}
+                          onclick={() => void applySelectedBankedReset()}
+                        >
+                          {#if isApplyingBankedReset}
+                            <span class="spinner" aria-hidden="true"></span>
+                            Applying…
+                          {:else}
+                            Apply
+                          {/if}
+                        </button>
+                      </div>
+                    </div>
                   {/if}
                 {:else}
                   <p class="reset-note">
@@ -691,13 +782,65 @@
   }
   .reset-popover-title { margin-bottom: 8px; color: var(--text-primary); font-size: 12px; font-weight: 600; }
   .reset-list { display: flex; flex-direction: column; gap: 9px; }
-  .reset-credit { padding-bottom: 9px; border-bottom: 1px solid var(--control-stroke-default); font-size: 11px; }
+  .reset-credit {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    min-width: 0;
+    padding: 0 0 var(--space-2);
+    border: 0;
+    border-bottom: 1px solid var(--control-stroke-default);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .reset-credit:hover,
+  .reset-credit.selected { background: color-mix(in srgb, var(--accent-default) 8%, transparent); }
+  .reset-credit:disabled { cursor: wait; opacity: 0.65; }
+  .reset-credit-unavailable { cursor: default; }
   .reset-credit:last-child { padding-bottom: 0; border-bottom: none; }
-  .reset-credit-title { color: var(--text-primary); font-weight: 600; }
-  .reset-credit-deadline { margin-top: 2px; color: var(--text-secondary); }
-  .reset-credit-relative { color: var(--accent-secondary); font-variant-numeric: tabular-nums; }
-  .reset-credit-description { margin-top: 2px; color: var(--text-secondary); }
+  .reset-credit-title { display: block; color: var(--text-primary); font-weight: 600; }
+  .reset-credit-deadline { display: block; margin-top: 2px; color: var(--text-secondary); }
+  .reset-credit-relative { display: block; color: var(--accent-secondary); font-variant-numeric: tabular-nums; }
+  .reset-credit-description { display: block; margin-top: 2px; color: var(--text-secondary); }
   .reset-note { color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
+  .reset-confirmation {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--control-stroke-default);
+  }
+  .reset-confirmation-title { color: var(--text-primary); font-size: 12px; font-weight: 600; }
+  .reset-confirmation-expiry { margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
+  .reset-confirmation-warning {
+    margin: var(--space-2) 0 0;
+    color: var(--system-critical);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .reset-confirmation-error {
+    margin-top: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--control-radius);
+    background: var(--system-background-critical);
+    color: var(--text-primary);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .reset-confirmation-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .reset-confirmation-actions button {
+    min-height: 28px;
+    padding-inline: var(--space-3);
+  }
+  .reset-confirmation-actions button:disabled { cursor: wait; opacity: 0.7; }
   .stat-label { font-size: 11px; line-height: var(--space-4); color: var(--text-secondary); }
   .stat-value { font-size: 13px; line-height: var(--space-4); font-variant-numeric: tabular-nums; }
   .section-label { font-size: 11px; color: var(--text-secondary); }

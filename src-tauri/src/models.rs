@@ -34,6 +34,7 @@ pub struct LimitReading {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BankedResetCredit {
+    pub id: String,
     pub title: String,
     pub description: Option<String>,
     pub expires_at: i64,

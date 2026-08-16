@@ -21,18 +21,20 @@ Ported from [thrr87/codex-limits](https://github.com/thrr87/codex-limits) (macOS
 Codex Dial supports two independent usage backends:
 
 - **Codex CLI** — reads rate limits from the signed-in Codex CLI over JSON-RPC (stdio).
-- **OpenCode Go** — fetches usage from `opencode.ai` using an authenticated session cookie.
+- **OpenCode Go** — fetches usage from `opencode.ai` with an OpenCode Zen API key.
 
 You only need one backend. Open **Settings → Usage backends** to enable or disable either integration. Both can be enabled if you want to compare their usage, or left disabled until you are ready to configure a provider.
 
 To use OpenCode Go:
 
 1. Enable **OpenCode Go** in **Settings**.
-2. Copy your `auth` or `__Host-auth` session cookie from your browser's developer tools (**Application → Cookies**).
-3. Paste the cookie into Codex Dial and select **Save**.
-4. Refresh the dashboard. If automatic workspace discovery does not work, paste the `wrk_...` workspace ID as an override in Settings.
+2. Create an OpenCode Zen API key from your OpenCode account's API key settings.
+3. Enter the key in Codex Dial and select **Save**.
+4. Refresh the dashboard to load the rolling, weekly, and monthly usage windows.
 
-The session cookie is saved in the app's local configuration and acts like a password. Treat it as sensitive, do not share it, and remove or replace it if it is exposed. OpenCode Go depends on authenticated web responses from `opencode.ai`, so expired cookies or upstream website changes can cause that backend to show an error.
+OpenCode Go reports three API usage windows: a rolling five-hour window, a weekly
+window, and a monthly window. The windows can reset independently, so the
+dashboard shows each deadline and remaining percentage.
 
 ## Stats at a glance
 
@@ -51,7 +53,7 @@ list will explain that details were not returned.
 - Windows 10/11
 - A configured usage backend for live data:
   - A signed-in [Codex CLI](https://github.com/openai/codex) installation (`codex` or `codex.cmd` on PATH), or
-  - An OpenCode Go account and an active browser session cookie
+  - An OpenCode Go account with an OpenCode Zen API key
 
 ## Install
 
@@ -68,7 +70,7 @@ Grab the latest `.exe` installer from [Releases](../../releases).
   - MSVC v143 (or newer) C++ build tools for x64/x86
   - A Windows 10 or Windows 11 SDK
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (including WebView2)
-- A signed-in Codex CLI installation for live Codex data, or an OpenCode Go browser session cookie
+- An OpenCode Go account with an OpenCode Zen API key
 
 The Rust target is configured in `.cargo/config.toml` as
 `x86_64-pc-windows-msvc`, so builds use Microsoft's linker instead of the

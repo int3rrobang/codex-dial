@@ -77,14 +77,18 @@ export async function stopSync() {
   uiState.set(state);
 }
 
-export async function setOpenCodeCookie(cookie: string | null) {
-  await invoke<UiState>("set_opencode_cookie", { cookie });
+export async function setOpenCodeApiKey(apiKey: string | null) {
+  const state = await invoke<UiState>("set_opencode_api_key", { apiKey });
+  uiState.set(state);
   await refresh();
 }
 
-export async function setOpenCodeWorkspaceId(id: string | null) {
-  await invoke<UiState>("set_opencode_workspace_id", { id });
-  await refresh();
+export async function applyCodexResetCredit(creditId: string, idempotencyKey: string) {
+  const state = await invoke<UiState>("apply_codex_reset_credit", {
+    creditId,
+    idempotencyKey,
+  });
+  uiState.set(state);
 }
 
 export async function setOpenCodeGoEnabled(enabled: boolean) {

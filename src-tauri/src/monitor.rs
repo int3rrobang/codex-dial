@@ -38,8 +38,7 @@ pub struct Monitor {
     pub opencode_go_forecasts: Vec<Forecast>,
     pub opencode_go_samples: Vec<UsageSample>,
     pub opencode_go_enabled: bool,
-    opencode_cookie: Option<String>,
-    opencode_workspace_id: Option<String>,
+    opencode_api_key: Option<String>,
     opencode_go_previous_statuses: Vec<PaceStatus>,
     previous_status: Option<PaceStatus>,
     history: UsageHistory,
@@ -54,8 +53,7 @@ struct PersistedConfig {
     sync_folder: Option<String>,
     codex_enabled: Option<bool>,
     previous_status: Option<PaceStatus>,
-    opencode_cookie: Option<String>,
-    opencode_workspace_id: Option<String>,
+    opencode_api_key: Option<String>,
     opencode_go_enabled: Option<bool>,
     reset_notifications_enabled: Option<bool>,
     reset_notification_state: Option<ResetNotificationState>,
@@ -100,8 +98,7 @@ impl Monitor {
             opencode_go_forecasts: Vec::new(),
             opencode_go_samples: Vec::new(),
             opencode_go_enabled,
-            opencode_cookie: config.opencode_cookie.clone(),
-            opencode_workspace_id: config.opencode_workspace_id.clone(),
+            opencode_api_key: config.opencode_api_key.clone(),
             opencode_go_previous_statuses: Vec::new(),
             previous_status: config.previous_status,
             history,
@@ -135,8 +132,7 @@ impl Monitor {
         self.sync_error_message = sync_state.error_message;
 
         let codex_enabled = self.codex_enabled;
-        let cookie = self.opencode_cookie.clone();
-        let workspace = self.opencode_workspace_id.clone();
+        let api_key = self.opencode_api_key.clone();
         let ocg_enabled = self.opencode_go_enabled;
 
         if !codex_enabled {
@@ -162,7 +158,7 @@ impl Monitor {
             },
             async {
                 if ocg_enabled {
-                    Some(opencode_client::fetch(&cookie, &workspace).await)
+                    Some(opencode_client::fetch(&api_key).await)
                 } else {
                     None
                 }
@@ -238,9 +234,9 @@ impl Monitor {
                     self.recalculate_opencode_go();
                     self.opencode_go_error = None;
                 }
-                Err(opencode_client::OpenCodeError::NotConfigured) => {
+                Err(error @ opencode_client::OpenCodeError::NotConfigured) => {
                     self.opencode_go = None;
-                    self.opencode_go_error = None;
+                    self.opencode_go_error = Some(error.to_string());
                     self.opencode_go_forecasts.clear();
                     self.opencode_go_samples.clear();
                     self.opencode_go_previous_statuses.clear();
@@ -389,14 +385,46 @@ impl Monitor {
         self.update_config(|c| c.codex_enabled = Some(enabled));
         Ok(())
     }
-    pub fn set_opencode_cookie(&mut self, cookie: Option<String>) {
-        self.opencode_cookie = cookie.clone();
-        self.update_config(|c| c.opencode_cookie = cookie);
-    }
 
-    pub fn set_opencode_workspace_id(&mut self, id: Option<String>) {
-        self.opencode_workspace_id = id.clone();
-        self.update_config(|c| c.opencode_workspace_id = id);
+    pub async fn apply_codex_reset_credit(
+        &mut self,
+        credit_id: String,
+        idempotency_key: String,
+    ) -> Result<(), String> {
+        if uuid::Uuid::parse_str(&idempotency_key).is_err() {
+            return Err("The idempotency key must be a valid UUID.".to_string());
+        }
+        if credit_id.trim().is_empty() {
+            return Err("That reset credit is not currently available.".to_string());
+        }
+
+        let available = self.snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot
+                .banked_reset_credits
+                .iter()
+                .any(|credit| credit.id == credit_id)
+        });
+        if !available {
+            return Err("That reset credit is not currently available.".to_string());
+        }
+
+        match codex_client::consume_reset_credit(&credit_id, &idempotency_key)
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            codex_client::ConsumeOutcome::Reset
+            | codex_client::ConsumeOutcome::AlreadyRedeemed => {}
+        }
+
+        self.refresh().await;
+        Ok(())
+    }
+    pub fn set_opencode_api_key(&mut self, api_key: Option<String>) {
+        let api_key = api_key
+            .map(|key| key.trim().to_string())
+            .filter(|key| !key.is_empty());
+        self.opencode_api_key = api_key.clone();
+        self.update_config(|c| c.opencode_api_key = api_key);
     }
 
     pub fn set_opencode_go_enabled(&mut self, enabled: bool) -> Result<(), String> {
@@ -567,6 +595,21 @@ mod tests {
             Vec::new()
         );
         assert!(state.is_none());
+    }
+
+    #[tokio::test]
+    async fn reports_missing_opencode_key_when_provider_is_enabled() {
+        let mut monitor = super::Monitor::new();
+        monitor.codex_enabled = false;
+        monitor.opencode_go_enabled = true;
+        monitor.opencode_api_key = None;
+
+        monitor.refresh().await;
+
+        assert_eq!(
+            monitor.opencode_go_error.as_deref(),
+            Some("OpenCode Go: API key is not configured. Add an API key in Settings.")
+        );
     }
 }
 

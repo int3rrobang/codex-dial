@@ -263,6 +263,18 @@ pub async fn set_codex_enabled(
     m.set_codex_enabled(enabled)?;
     Ok(m.ui_state())
 }
+
+#[tauri::command]
+pub async fn apply_codex_reset_credit(
+    monitor: State<'_, MonitorState>,
+    credit_id: String,
+    idempotency_key: String,
+) -> Result<UiState, String> {
+    let mut m = monitor.lock().await;
+    m.apply_codex_reset_credit(credit_id, idempotency_key)
+        .await?;
+    Ok(m.ui_state())
+}
 #[tauri::command]
 pub async fn choose_sync_folder(
     monitor: State<'_, MonitorState>,
@@ -294,22 +306,12 @@ pub async fn stop_sync(monitor: State<'_, MonitorState>) -> Result<UiState, Stri
 }
 
 #[tauri::command]
-pub async fn set_opencode_cookie(
+pub async fn set_opencode_api_key(
     monitor: State<'_, MonitorState>,
-    cookie: Option<String>,
+    api_key: Option<String>,
 ) -> Result<UiState, String> {
     let mut m = monitor.lock().await;
-    m.set_opencode_cookie(cookie);
-    Ok(m.ui_state())
-}
-
-#[tauri::command]
-pub async fn set_opencode_workspace_id(
-    monitor: State<'_, MonitorState>,
-    id: Option<String>,
-) -> Result<UiState, String> {
-    let mut m = monitor.lock().await;
-    m.set_opencode_workspace_id(id);
+    m.set_opencode_api_key(api_key);
     Ok(m.ui_state())
 }
 
